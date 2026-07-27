@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import json
 import os
+import re
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -10,8 +12,10 @@ class IW4xServerManager:
     def __init__(self, root):
         self.root = root
         self.root.title("IW4x Linux Server Configurator")
-        self.root.geometry("820x760")
-        self.root.minsize(750, 700)
+
+        # Resized window geometry to ensure bottom buttons are fully visible
+        self.root.geometry("880x880")
+        self.root.minsize(820, 780)
 
         # Main Layout: Top Notebook for settings, Bottom Frame for persistent controls
         self.notebook = ttk.Notebook(root)
@@ -39,6 +43,9 @@ class IW4xServerManager:
 
         # Always-Visible Bottom Action Frame
         self.setup_bottom_panel()
+
+        # Auto-load saved settings if present
+        self.load_app_state()
 
     # --- TAB 1: GENERAL & ADMIN ---
     def setup_general_tab(self):
@@ -128,6 +135,171 @@ class IW4xServerManager:
         folder = filedialog.askdirectory()
         if folder:
             self.path_var.set(folder)
+            self.check_and_load_existing_cfg()
+    
+    def check_and_load_existing_cfg(self):
+        game_dir = self.path_var.get()
+        if not os.path.exists(game_dir):
+            return
+
+        # Check standard userraw directory first, fallback to root folder
+        cfg_path = os.path.join(game_dir, "userraw", "server.cfg")
+        if not os.path.exists(cfg_path):
+            cfg_path = os.path.join(game_dir, "server.cfg")
+
+        if os.path.exists(cfg_path):
+            answer = messagebox.askyesno(
+                "Existing Config Found",
+                f"An existing 'server.cfg' was found at:\n{cfg_path}\n\nWould you like to load its settings into the editor?",
+            )
+            if answer:
+                self.parse_server_cfg(cfg_path)
+
+    def parse_server_cfg(self, cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+
+            dvars = {}
+            for line in lines:
+                line = line.strip()
+                if line.startswith("//") or not line:
+                    continue
+                if "//" in line:
+                    line = line.split("//")[0].strip()
+
+                # Parse: set <dvar_name> "<value>" or set <dvar_name> <value>
+                match = re.match(
+                    r"^set\s+([a-zA-Z0-9_]+)\s+[\"\']?(.*?)[\"\']?$", line
+                )
+                if match:
+                    dvar = match.group(1).lower()
+                    val = match.group(2).strip('"\'')
+                    dvars[dvar] = val
+
+            # Map basic dvars
+            if "sv_hostname" in dvars:
+                self.hostname_var.set(dvars["sv_hostname"])
+            if "sv_motd" in dvars:
+                self.motd_var.set(dvars["sv_motd"])
+            if "rcon_password" in dvars:
+                self.rcon_var.set(dvars["rcon_password"])
+            if "sv_maxclients" in dvars:
+                self.maxplayers_var.set(dvars["sv_maxclients"])
+            if "g_inactivity" in dvars:
+                self.inactivity_var.set(dvars["g_inactivity"])
+            if "g_inactivityspectator" in dvars:
+                self.spec_inactivity_var.set(dvars["g_inactivityspectator"])
+
+            # Gameplay & XP dvars
+            if "g_hardcore" in dvars:
+                self.hc_var.set(dvars["g_hardcore"] == "1")
+            if "scr_team_fftype" in dvars:
+                val = dvars["scr_team_fftype"]
+                for c in [
+                    "0 - Disabled",
+                    "1 - Enabled (On)",
+                    "2 - Reflect Damage",
+                    "3 - Shared Damage",
+                ]:
+                    if c.startswith(val):
+                        self.ff_var.set(c)
+            if "scr_game_spectatetype" in dvars:
+                val = dvars["scr_game_spectatetype"]
+                for c in [
+                    "0 - Disabled",
+                    "1 - Team/Player Only",
+                    "2 - Free Camera",
+                ]:
+                    if c.startswith(val):
+                        self.spectate_var.set(c)
+
+            if "scr_xpscale" in dvars:
+                self.xpscale_var.set(dvars["scr_xpscale"])
+            if "scr_war_score_kill" in dvars:
+                self.xp_kill_var.set(dvars["scr_war_score_kill"])
+            if "scr_war_score_headshot" in dvars:
+                self.xp_headshot_var.set(dvars["scr_war_score_headshot"])
+            if "scr_war_score_assist" in dvars:
+                self.xp_assist_var.set(dvars["scr_war_score_assist"])
+            if "scr_war_score_death" in dvars:
+                self.xp_death_var.set(dvars["scr_war_score_death"])
+            if "scr_war_score_suicide" in dvars:
+                self.xp_suicide_var.set(dvars["scr_war_score_suicide"])
+            if "scr_game_allowkillcam" in dvars:
+                self.killcam_var.set(dvars["scr_game_allowkillcam"] == "1")
+            if "scr_teambalance" in dvars:
+                self.teambalance_var.set(dvars["scr_teambalance"] == "1")
+
+            # Gametype rules
+            for gt, _ in self.all_gametypes:
+                for rule_key, dvar_name in [
+                    ("scorelimit", f"scr_{gt}_scorelimit"),
+                    ("timelimit", f"scr_{gt}_timelimit"),
+                    ("respawn", f"scr_{gt}_playerrespawndelay"),
+                    ("lives", f"scr_{gt}_numlives"),
+                    ("roundlimit", f"scr_{gt}_roundlimit"),
+                    ("winlimit", f"scr_{gt}_winlimit"),
+                ]:
+                    if dvar_name in dvars:
+                        self.gt_rules_data[gt][rule_key] = dvars[dvar_name]
+            self.load_gt_rules()
+
+            # BotWarfare dvars
+            if "bots_main" in dvars:
+                self.bot_enable_var.set(dvars["bots_main"] == "1")
+            if "bots_main_waitforhosttime" in dvars:
+                self.bot_wait_var.set(dvars["bots_main_waitforhosttime"])
+            if "bots_main_menu" in dvars:
+                self.bot_menu_var.set(dvars["bots_main_menu"] == "1")
+            if "bots_main_kickbotsatend" in dvars:
+                self.bot_kick_end_var.set(dvars["bots_main_kickbotsatend"] == "1")
+            if "bots_main_chat" in dvars:
+                self.bot_chat_var.set(dvars["bots_main_chat"])
+            if "bots_manage_fill" in dvars:
+                self.bot_fill_var.set(dvars["bots_manage_fill"])
+            if "bots_manage_fill_watchplayers" in dvars:
+                self.bot_watch_var.set(dvars["bots_manage_fill_watchplayers"] == "1")
+            if "bots_manage_fill_kick" in dvars:
+                self.bot_fill_kick_var.set(dvars["bots_manage_fill_kick"] == "1")
+            if "bots_skill_min" in dvars:
+                self.bot_skill_min_var.set(dvars["bots_skill_min"])
+            if "bots_skill_max" in dvars:
+                self.bot_skill_max_var.set(dvars["bots_skill_max"])
+            if "bots_loadout_allow_op" in dvars:
+                self.bot_allow_op_var.set(dvars["bots_loadout_allow_op"] == "1")
+            if "bots_loadout_rank" in dvars:
+                self.bot_rank_var.set(dvars["bots_loadout_rank"])
+            if "bots_loadout_prestige" in dvars:
+                self.bot_prestige_var.set(dvars["bots_loadout_prestige"])
+
+            # Parse sv_mapRotation tokens to restore selected maps and active gametypes
+            if "sv_maprotation" in dvars:
+                tokens = dvars["sv_maprotation"].split()
+                parsed_maps = set()
+                parsed_gts = set()
+                for i in range(len(tokens) - 1):
+                    if tokens[i].lower() == "map":
+                        parsed_maps.add(tokens[i + 1].lower())
+                    elif tokens[i].lower() == "gametype":
+                        parsed_gts.add(tokens[i + 1].lower())
+
+                if parsed_gts:
+                    for code, var in self.gt_vars.items():
+                        var.set(code.lower() in parsed_gts)
+
+                if parsed_maps:
+                    for category, (lb, maps) in self.map_listboxes.items():
+                        lb.selection_clear(0, tk.END)
+                        for idx, (code, name) in enumerate(maps):
+                            if code.lower() in parsed_maps:
+                                lb.select_set(idx)
+
+            self.log(f"[LOAD] Imported existing config settings from: {cfg_path}")
+            messagebox.showinfo("Success", f"Loaded settings from:\n{cfg_path}")
+        except Exception as e:
+            self.log(f"[ERROR] Failed parsing cfg: {e}")
+            messagebox.showerror("Error", f"Could not parse file:\n{e}")
 
     # --- TAB 2: GAMEPLAY & XP RULES ---
     def setup_gameplay_tab(self):
@@ -419,25 +591,9 @@ class IW4xServerManager:
         }
         self.log(f"[CONFIG] Applied rules for gametype '{gt}'")
 
-    # --- TAB 4: MAP ROTATION (DLC CATEGORIZED & PERSISTENT WITH SCAN) ---
+    # --- TAB 4: MAP ROTATION (DLC CATEGORIZED & PERSISTENT) ---
     def setup_maps_tab(self):
         f = self.tab_maps
-
-        # Top control bar for scanning
-        top_bar = ttk.Frame(f)
-        top_bar.pack(fill="x", padx=5, pady=5)
-
-        ttk.Button(
-            top_bar,
-            text="Scan Directory for Installed Maps",
-            command=self.scan_installed_maps,
-        ).pack(side="left", padx=5)
-
-        ttk.Label(
-            top_bar,
-            text="Uninstalled maps will be marked [NOT FOUND] and disabled.",
-            font=("Helvetica", 8, "italic"),
-        ).pack(side="left", padx=5)
 
         self.map_notebook = ttk.Notebook(f)
         self.map_notebook.pack(expand=True, fill="both", padx=5, pady=5)
@@ -522,6 +678,7 @@ class IW4xServerManager:
             sub_frame = ttk.Frame(self.map_notebook)
             self.map_notebook.add(sub_frame, text=category_name)
 
+            # CRITICAL FIX: exportselection=False prevents selection clearing when switching tabs
             lb = tk.Listbox(
                 sub_frame,
                 selectmode=tk.MULTIPLE,
@@ -530,66 +687,24 @@ class IW4xServerManager:
             )
             lb.pack(fill="both", expand=True, padx=5, pady=5)
 
-            # Prevent selecting "NOT FOUND" items
-            lb.bind("<<ListboxSelect>>", self.on_map_select)
-
             for code, name in maps:
                 lb.insert(tk.END, f"{name} ({code})")
 
-            # Default select base maps initially
+            # Default select base maps
             if category_name == "Base MW2":
                 for idx in range(len(maps)):
                     lb.select_set(idx)
 
             self.map_listboxes[category_name] = (lb, maps)
 
-    def scan_installed_maps(self):
-        game_dir = self.path_var.get()
-        if not os.path.exists(game_dir):
-            messagebox.showerror("Error", "Invalid IW4x server directory path!")
-            return
-
-        # Scan directory recursively for .ff fastfiles and usermap folders
-        found_maps = set()
-        for root, dirs, files in os.walk(game_dir):
-            for f in files:
-                if f.endswith(".ff"):
-                    found_maps.add(f[:-3].lower())  # strip .ff extension
-            for d in dirs:
-                found_maps.add(d.lower())
-
-        # Update Listboxes
-        for category_name, (lb, maps) in self.map_listboxes.items():
-            lb.delete(0, tk.END)
-            for idx, (code, name) in enumerate(maps):
-                if code.lower() in found_maps:
-                    lb.insert(tk.END, f"{name} ({code})")
-                    lb.itemconfig(idx, foreground="black")
-                else:
-                    lb.insert(tk.END, f"[NOT FOUND] {name} ({code})")
-                    lb.itemconfig(idx, foreground="gray")
-
-        self.log(f"[SCAN] Completed scanning installed maps in: {game_dir}")
-        messagebox.showinfo("Scan Complete", "Map directory scan finished!")
-
-    def on_map_select(self, event):
-        lb = event.widget
-        selected_indices = lb.curselection()
-        for idx in selected_indices:
-            item_text = lb.get(idx)
-            if item_text.startswith("[NOT FOUND]"):
-                lb.selection_clear(idx)  # Immediately deselect uninstalled maps
-
     def get_selected_maps(self):
         selected = []
         for category, (lb, maps) in self.map_listboxes.items():
             indices = lb.curselection()
             for idx in indices:
-                item_text = lb.get(idx)
-                if not item_text.startswith("[NOT FOUND]"):
-                    selected.append(maps[idx][0])
+                selected.append(maps[idx][0])
         return selected
-        
+
     # --- TAB 5: BOTWARFARE CONFIG (EXTENDED) ---
     def setup_bots_tab(self):
         f = self.tab_bots
@@ -757,7 +872,8 @@ class IW4xServerManager:
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", side="bottom", padx=10, pady=5)
 
-        self.log_text = tk.Text(bottom_frame, height=5, width=80)
+        # Reduced height to 4 lines to ensure bottom buttons stay visible
+        self.log_text = tk.Text(bottom_frame, height=4, width=80)
         self.log_text.pack(fill="x", padx=5, pady=2)
 
         btn_container = ttk.Frame(bottom_frame)
@@ -883,6 +999,10 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
         try:
             with open(cfg_path, "w") as f:
                 f.write(self.generate_cfg())
+
+            # Save state to JSON for auto-loading on app restart
+            self.save_app_state()
+
             self.log(f"[OK] Configuration written to: {cfg_path}")
             messagebox.showinfo("Saved", f"server.cfg generated:\n{cfg_path}")
             return True
@@ -937,6 +1057,123 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
         except Exception as e:
             self.log(f"[ERROR] Launch failed: {e}")
             messagebox.showerror("Error", f"Failed to run server:\n{e}")
+
+    def save_app_state(self):
+        state = {
+            "path": self.path_var.get(),
+            "hostname": self.hostname_var.get(),
+            "motd": self.motd_var.get(),
+            "network": self.network_var.get(),
+            "port": self.port_var.get(),
+            "maxplayers": self.maxplayers_var.get(),
+            "rcon": self.rcon_var.get(),
+            "inactivity": self.inactivity_var.get(),
+            "spec_inactivity": self.spec_inactivity_var.get(),
+            "hardcore": self.hc_var.get(),
+            "friendly_fire": self.ff_var.get(),
+            "spectate": self.spectate_var.get(),
+            "xpscale": self.xpscale_var.get(),
+            "xp_kill": self.xp_kill_var.get(),
+            "xp_headshot": self.xp_headshot_var.get(),
+            "xp_assist": self.xp_assist_var.get(),
+            "xp_death": self.xp_death_var.get(),
+            "xp_suicide": self.xp_suicide_var.get(),
+            "killcam": self.killcam_var.get(),
+            "teambalance": self.teambalance_var.get(),
+            "gametypes": {code: var.get() for code, var in self.gt_vars.items()},
+            "gt_rules": self.gt_rules_data,
+            "selected_maps": self.get_selected_maps(),
+            "bot_enable": self.bot_enable_var.get(),
+            "bot_wait": self.bot_wait_var.get(),
+            "bot_menu": self.bot_menu_var.get(),
+            "bot_kick_end": self.bot_kick_end_var.get(),
+            "bot_chat": self.bot_chat_var.get(),
+            "bot_fill": self.bot_fill_var.get(),
+            "bot_fill_mode": self.bot_fill_mode_var.get(),
+            "bot_watch": self.bot_watch_var.get(),
+            "bot_fill_kick": self.bot_fill_kick_var.get(),
+            "bot_skill": self.bot_skill_var.get(),
+            "bot_skill_min": self.bot_skill_min_var.get(),
+            "bot_skill_max": self.bot_skill_max_var.get(),
+            "bot_allow_op": self.bot_allow_op_var.get(),
+            "bot_rank": self.bot_rank_var.get(),
+            "bot_prestige": self.bot_prestige_var.get(),
+        }
+        try:
+            with open("manager_settings.json", "w") as f:
+                json.dump(state, f, indent=4)
+        except Exception as e:
+            self.log(f"[WARN] Failed to save manager settings: {e}")
+
+    def load_app_state(self):
+        if not os.path.exists("manager_settings.json"):
+            return
+
+        try:
+            with open("manager_settings.json", "r") as f:
+                state = json.load(f)
+
+            self.path_var.set(state.get("path", self.path_var.get()))
+            self.hostname_var.set(state.get("hostname", self.hostname_var.get()))
+            self.motd_var.set(state.get("motd", self.motd_var.get()))
+            self.network_var.set(state.get("network", self.network_var.get()))
+            self.port_var.set(state.get("port", self.port_var.get()))
+            self.maxplayers_var.set(state.get("maxplayers", self.maxplayers_var.get()))
+            self.rcon_var.set(state.get("rcon", self.rcon_var.get()))
+            self.inactivity_var.set(state.get("inactivity", self.inactivity_var.get()))
+            self.spec_inactivity_var.set(state.get("spec_inactivity", self.spec_inactivity_var.get()))
+
+            self.hc_var.set(state.get("hardcore", self.hc_var.get()))
+            self.ff_var.set(state.get("friendly_fire", self.ff_var.get()))
+            self.spectate_var.set(state.get("spectate", self.spectate_var.get()))
+            self.xpscale_var.set(state.get("xpscale", self.xpscale_var.get()))
+            self.xp_kill_var.set(state.get("xp_kill", self.xp_kill_var.get()))
+            self.xp_headshot_var.set(state.get("xp_headshot", self.xp_headshot_var.get()))
+            self.xp_assist_var.set(state.get("xp_assist", self.xp_assist_var.get()))
+            self.xp_death_var.set(state.get("xp_death", self.xp_death_var.get()))
+            self.xp_suicide_var.set(state.get("xp_suicide", self.xp_suicide_var.get()))
+            self.killcam_var.set(state.get("killcam", self.killcam_var.get()))
+            self.teambalance_var.set(state.get("teambalance", self.teambalance_var.get()))
+
+            # Restore Gametypes
+            gt_saved = state.get("gametypes", {})
+            for code, var in self.gt_vars.items():
+                if code in gt_saved:
+                    var.set(gt_saved[code])
+
+            if "gt_rules" in state:
+                self.gt_rules_data.update(state["gt_rules"])
+                self.load_gt_rules()
+
+            # Restore Map Selections
+            saved_maps = set(state.get("selected_maps", []))
+            if saved_maps:
+                for category, (lb, maps) in self.map_listboxes.items():
+                    lb.selection_clear(0, tk.END)
+                    for idx, (code, name) in enumerate(maps):
+                        if code in saved_maps:
+                            lb.select_set(idx)
+
+            # Restore Bots
+            self.bot_enable_var.set(state.get("bot_enable", self.bot_enable_var.get()))
+            self.bot_wait_var.set(state.get("bot_wait", self.bot_wait_var.get()))
+            self.bot_menu_var.set(state.get("bot_menu", self.bot_menu_var.get()))
+            self.bot_kick_end_var.set(state.get("bot_kick_end", self.bot_kick_end_var.get()))
+            self.bot_chat_var.set(state.get("bot_chat", self.bot_chat_var.get()))
+            self.bot_fill_var.set(state.get("bot_fill", self.bot_fill_var.get()))
+            self.bot_fill_mode_var.set(state.get("bot_fill_mode", self.bot_fill_mode_var.get()))
+            self.bot_watch_var.set(state.get("bot_watch", self.bot_watch_var.get()))
+            self.bot_fill_kick_var.set(state.get("bot_fill_kick", self.bot_fill_kick_var.get()))
+            self.bot_skill_var.set(state.get("bot_skill", self.bot_skill_var.get()))
+            self.bot_skill_min_var.set(state.get("bot_skill_min", self.bot_skill_min_var.get()))
+            self.bot_skill_max_var.set(state.get("bot_skill_max", self.bot_skill_max_var.get()))
+            self.bot_allow_op_var.set(state.get("bot_allow_op", self.bot_allow_op_var.get()))
+            self.bot_rank_var.set(state.get("bot_rank", self.bot_rank_var.get()))
+            self.bot_prestige_var.set(state.get("bot_prestige", self.bot_prestige_var.get()))
+
+            self.log("[CONFIG] Auto-loaded saved configuration.")
+        except Exception as e:
+            self.log(f"[WARN] Failed to load saved state: {e}")
 
 
 if __name__ == "__main__":
