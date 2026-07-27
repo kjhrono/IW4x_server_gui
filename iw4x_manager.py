@@ -13,7 +13,6 @@ class IW4xServerManager:
         self.root = root
         self.root.title("IW4x Linux Server Configurator")
 
-        # Resized window geometry to ensure bottom buttons are fully visible
         self.root.geometry("880x880")
         self.root.minsize(820, 780)
 
@@ -44,8 +43,11 @@ class IW4xServerManager:
         # Always-Visible Bottom Action Frame
         self.setup_bottom_panel()
 
-        # Auto-load saved settings if present
-        self.load_app_state()
+        # Load manager_settings.json if present; otherwise, check the directory for server.cfg
+        if os.path.exists("manager_settings.json"):
+            self.load_app_state()
+        else:
+            self.check_and_load_existing_cfg()
 
     # --- TAB 1: GENERAL & ADMIN ---
     def setup_general_tab(self):
@@ -54,7 +56,10 @@ class IW4xServerManager:
         ttk.Label(f, text="IW4x Server Directory:").grid(
             row=0, column=0, sticky="w", padx=10, pady=6
         )
-        self.path_var = tk.StringVar(value=os.path.expanduser("~"))
+        # Default to the directory where this script resides
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.path_var = tk.StringVar(value=script_dir)
+
         ttk.Entry(f, textvariable=self.path_var, width=42).grid(
             row=0, column=1, padx=5, pady=6
         )
