@@ -419,9 +419,25 @@ class IW4xServerManager:
         }
         self.log(f"[CONFIG] Applied rules for gametype '{gt}'")
 
-    # --- TAB 4: MAP ROTATION (DLC CATEGORIZED & PERSISTENT) ---
+    # --- TAB 4: MAP ROTATION (DLC CATEGORIZED & PERSISTENT WITH SCAN) ---
     def setup_maps_tab(self):
         f = self.tab_maps
+
+        # Top control bar for scanning
+        top_bar = ttk.Frame(f)
+        top_bar.pack(fill="x", padx=5, pady=5)
+
+        ttk.Button(
+            top_bar,
+            text="Scan Directory for Installed Maps",
+            command=self.scan_installed_maps,
+        ).pack(side="left", padx=5)
+
+        ttk.Label(
+            top_bar,
+            text="Uninstalled maps will be marked [NOT FOUND] and disabled.",
+            font=("Helvetica", 8, "italic"),
+        ).pack(side="left", padx=5)
 
         self.map_notebook = ttk.Notebook(f)
         self.map_notebook.pack(expand=True, fill="both", padx=5, pady=5)
@@ -506,7 +522,6 @@ class IW4xServerManager:
             sub_frame = ttk.Frame(self.map_notebook)
             self.map_notebook.add(sub_frame, text=category_name)
 
-            # CRITICAL FIX: exportselection=False prevents selection clearing when switching tabs
             lb = tk.Listbox(
                 sub_frame,
                 selectmode=tk.MULTIPLE,
@@ -515,24 +530,66 @@ class IW4xServerManager:
             )
             lb.pack(fill="both", expand=True, padx=5, pady=5)
 
+            # Prevent selecting "NOT FOUND" items
+            lb.bind("<<ListboxSelect>>", self.on_map_select)
+
             for code, name in maps:
                 lb.insert(tk.END, f"{name} ({code})")
 
-            # Default select base maps
+            # Default select base maps initially
             if category_name == "Base MW2":
                 for idx in range(len(maps)):
                     lb.select_set(idx)
 
             self.map_listboxes[category_name] = (lb, maps)
 
+    def scan_installed_maps(self):
+        game_dir = self.path_var.get()
+        if not os.path.exists(game_dir):
+            messagebox.showerror("Error", "Invalid IW4x server directory path!")
+            return
+
+        # Scan directory recursively for .ff fastfiles and usermap folders
+        found_maps = set()
+        for root, dirs, files in os.walk(game_dir):
+            for f in files:
+                if f.endswith(".ff"):
+                    found_maps.add(f[:-3].lower())  # strip .ff extension
+            for d in dirs:
+                found_maps.add(d.lower())
+
+        # Update Listboxes
+        for category_name, (lb, maps) in self.map_listboxes.items():
+            lb.delete(0, tk.END)
+            for idx, (code, name) in enumerate(maps):
+                if code.lower() in found_maps:
+                    lb.insert(tk.END, f"{name} ({code})")
+                    lb.itemconfig(idx, foreground="black")
+                else:
+                    lb.insert(tk.END, f"[NOT FOUND] {name} ({code})")
+                    lb.itemconfig(idx, foreground="gray")
+
+        self.log(f"[SCAN] Completed scanning installed maps in: {game_dir}")
+        messagebox.showinfo("Scan Complete", "Map directory scan finished!")
+
+    def on_map_select(self, event):
+        lb = event.widget
+        selected_indices = lb.curselection()
+        for idx in selected_indices:
+            item_text = lb.get(idx)
+            if item_text.startswith("[NOT FOUND]"):
+                lb.selection_clear(idx)  # Immediately deselect uninstalled maps
+
     def get_selected_maps(self):
         selected = []
         for category, (lb, maps) in self.map_listboxes.items():
             indices = lb.curselection()
             for idx in indices:
-                selected.append(maps[idx][0])
+                item_text = lb.get(idx)
+                if not item_text.startswith("[NOT FOUND]"):
+                    selected.append(maps[idx][0])
         return selected
-
+        
     # --- TAB 5: BOTWARFARE CONFIG (EXTENDED) ---
     def setup_bots_tab(self):
         f = self.tab_bots
