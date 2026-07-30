@@ -1000,7 +1000,7 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
 
         return cfg
 
-    def save_config(self):
+    def save_config(self, show_popup=True):
         game_dir = self.path_var.get()
         if not os.path.exists(game_dir):
             messagebox.showerror("Error", "Invalid IW4x server directory path!")
@@ -1014,11 +1014,12 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
             with open(cfg_path, "w") as f:
                 f.write(self.generate_cfg())
 
-            # Save state to JSON for auto-loading on app restart
+            # Save state to JSON for auto-loading
             self.save_app_state()
 
             self.log(f"[OK] Configuration written to: {cfg_path}")
-            messagebox.showinfo("Saved", f"server.cfg generated:\n{cfg_path}")
+            if show_popup:
+                messagebox.showinfo("Saved", f"server.cfg generated:\n{cfg_path}")
             return True
         except Exception as e:
             self.log(f"[ERROR] Save failed: {e}")
