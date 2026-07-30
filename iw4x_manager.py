@@ -877,7 +877,6 @@ class IW4xServerManager:
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", side="bottom", padx=10, pady=5)
 
-        # Reduced height to 4 lines to ensure bottom buttons stay visible
         self.log_text = tk.Text(bottom_frame, height=4, width=80)
         self.log_text.pack(fill="x", padx=5, pady=2)
 
@@ -888,16 +887,26 @@ class IW4xServerManager:
             btn_container,
             text="Save server.cfg",
             command=self.save_config,
-            width=22,
-        ).pack(side="left", padx=10)
+            width=18,
+        ).pack(side="left", padx=5)
+
         ttk.Button(
             btn_container,
-            text="Run Server",
-            command=self.launch_server,
-            width=22,
-        ).pack(side="right", padx=10)
+            text="Run (Linux)",
+            command=self.launch_server_linux,
+            width=18,
+        ).pack(side="right", padx=5)
 
-        self.log("Ready. Map selections across all DLC tabs will now persist.")
+        ttk.Button(
+            btn_container,
+            text="Run (Windows)",
+            command=self.launch_server_windows,
+            width=18,
+        ).pack(side="right", padx=5)
+
+        self.log(
+            "Ready. Select 'Run (Linux)' or 'Run (Windows)' depending on your OS."
+        )
 
     def log(self, message):
         self.log_text.insert(tk.END, message + "\n")
@@ -1016,7 +1025,7 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
             messagebox.showerror("Error", f"Failed writing file:\n{e}")
             return False
 
-    def launch_server(self):
+    def launch_server_linux(self):
         game_dir = self.path_var.get()
         exe_path = os.path.join(game_dir, "iw4x.exe")
 
@@ -1026,7 +1035,83 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
                 f"iw4x.exe was not found in:\n{game_dir}\nAttempting launch anyway...",
             )
 
-        if not self.save_config():
+        if not self.save_config(show_popup=False):
+            return
+
+        lan_flag = "1" if "LAN" in self.network_var.get() else "0"
+        ded_flag = "1" if "LAN" in self.network_var.get() else "2"
+        port = self.port_var.get()
+
+        wine_cmd = (
+            f"wine iw4x.exe -dedicated -g_log games_mp.log "
+            f"+set dedicated {ded_flag} +set net_port {port} +set sv_lanOnly {lan_flag} "
+            f"+exec server.cfg +map_rotate"
+        )
+
+        terminals = [
+            ["x-terminal-emulator", "-e", wine_cmd],
+            [
+                "gnome-terminal",
+                "--",
+                "bash",
+                "-c",
+                f"{wine_cmd}; read -p 'Server stopped. Press Enter to close...'",
+            ],
+            ["xterm", "-e", wine_cmd],
+        ]
+
+        launched = False
+        for term_cmd in terminals:
+            try:
+                subprocess.Popen(term_cmd, cwd=game_dir)
+                self.log(
+                    f"[LAUNCH-LINUX] Server opened in terminal using '{term_cmd[0]}'."
+                )
+                launched = True
+                break
+            except FileNotFoundError:
+                continue
+
+        if not launched:
+            cmd = [
+                "wine",
+                "iw4x.exe",
+                "-dedicated",
+                "-g_log",
+                "games_mp.log",
+                "+set",
+                "dedicated",
+                ded_flag,
+                "+set",
+                "net_port",
+                port,
+                "+set",
+                "sv_lanOnly",
+                lan_flag,
+                "+exec",
+                "server.cfg",
+                "+map_rotate",
+            ]
+            try:
+                subprocess.Popen(cmd, cwd=game_dir)
+                self.log(
+                    "[LAUNCH-LINUX] Server launched as background Wine process."
+                )
+            except Exception as e:
+                self.log(f"[ERROR] Failed to start process: {e}")
+                messagebox.showerror("Error", f"Could not launch process:\n{e}")
+
+    def launch_server_windows(self):
+        game_dir = self.path_var.get()
+        exe_path = os.path.join(game_dir, "iw4x.exe")
+
+        if not os.path.isfile(exe_path):
+            messagebox.showwarning(
+                "Warning",
+                f"iw4x.exe was not found in:\n{game_dir}\nAttempting launch anyway...",
+            )
+
+        if not self.save_config(show_popup=False):
             return
 
         lan_flag = "1" if "LAN" in self.network_var.get() else "0"
@@ -1034,7 +1119,6 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
         port = self.port_var.get()
 
         cmd = [
-            "wine",
             "iw4x.exe",
             "-dedicated",
             "-g_log",
@@ -1053,15 +1137,21 @@ set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
             "+map_rotate",
         ]
 
-        self.log(f"[LAUNCH] Executing in {game_dir}:")
+        self.log(f"[LAUNCH-WINDOWS] Executing in {game_dir}:")
         self.log(" ".join(cmd))
 
         try:
-            subprocess.Popen(cmd, cwd=game_dir)
-            self.log("[OK] Server launched successfully.")
+            # Safely gets CREATE_NEW_CONSOLE on Windows to launch a native Command Prompt
+            creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+            subprocess.Popen(cmd, cwd=game_dir, creationflags=creationflags)
+            self.log(
+                "[OK] Windows server started successfully in a new console window."
+            )
         except Exception as e:
-            self.log(f"[ERROR] Launch failed: {e}")
-            messagebox.showerror("Error", f"Failed to run server:\n{e}")
+            self.log(f"[ERROR] Windows launch failed: {e}")
+            messagebox.showerror(
+                "Error", f"Could not launch Windows process:\n{e}"
+            )
 
     def save_app_state(self):
         state = {
