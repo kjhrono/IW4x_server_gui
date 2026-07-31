@@ -42,15 +42,14 @@ Built with Python and Tkinter, this tool eliminates manual `server.cfg` editing 
 ## 📁 Directory Structure
 
 IW4x-Server-Manager/
-├── iw4x_manager.py          # Main Python GUI application
-├── manager_settings.json    # Application state (auto-generated)
-├── map_tags.json            # Custom map tags database (auto-generated)
-├── map_previews/            # Map preview image folder
-│   ├── preview_mp_afghan.png
-│   ├── mp_rust.webp
-│   └── ...
-└── userraw/
-    └── server.cfg           # Generated server configuration file
+-> iw4x_manager.py           # Main Python GUI application
+-> server.cfg                # Generated server configuration file
+-> manager_settings.json     # Application state (auto-generated)
+-> map_tags.json             # Custom map tags database (auto-generated)
+-> map_previews/             # Map preview image folder
+--> preview_mp_afghan.png    # mp_afghan image in png format
+--> mp_rust.webp             # mp_rust image in webp format
+--> ...                      # other map files
 
 ## 📦 Prerequisites
 
