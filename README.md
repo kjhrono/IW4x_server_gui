@@ -41,15 +41,18 @@ Built with Python and Tkinter, this tool eliminates manual `server.cfg` editing 
 
 ## 📁 Directory Structure
 
+```text
 IW4x-Server-Manager/
--> iw4x_manager.py           # Main Python GUI application
--> server.cfg                # Generated server configuration file
--> manager_settings.json     # Application state (auto-generated)
--> map_tags.json             # Custom map tags database (auto-generated)
--> map_previews/             # Map preview image folder
---> preview_mp_afghan.png    # mp_afghan image in png format
---> mp_rust.webp             # mp_rust image in webp format
---> ...                      # other map files
+├── iw4x_manager.py          # Main Python GUI application
+├── manager_settings.json    # Application state (auto-generated)
+├── map_tags.json            # Custom map tags database (auto-generated)
+├── map_previews/            # Map preview image folder
+│   ├── preview_mp_afghan.png
+│   ├── mp_rust.webp
+│   └── ...
+└── <game_directory>/
+    └── userraw/
+        └── server.cfg       # Executable configuration file
 
 ## 📦 Prerequisites
 
@@ -57,9 +60,9 @@ IW4x-Server-Manager/
 Ensure Python 3, Tkinter, Pillow (for image processing), and Wine are installed.
 
 ### 🪟 Windows
-Download and install Python 3.x from python.org.
-During installation, make sure to check "Add python.exe to PATH".
-Install the Pillow package via Command Prompt: pip install Pillow
+Download and install Python 3.x from python.org.  
+During installation, make sure to check "Add python.exe to PATH".  
+Install the Pillow package via Command Prompt: pip install Pillow   
 
 ## 🚀 How to Run
 
@@ -67,16 +70,16 @@ Install the Pillow package via Command Prompt: pip install Pillow
 Open your terminal in the script directory and run: python3 iw4x_manager.py
 
 ### 🪟 Windows
-Using Command Prompt: py iw4x_manager.py
+Using Command Prompt: py iw4x_manager.py  
 Direct Double-Click: Rename iw4x_manager.py to iw4x_manager.pyw. Double-clicking a .pyw file in Windows Explorer launches the GUI directly without keeping a background black command window open.
 
 ### 🖼️ Adding Map Preview Images
-Place your loading screen images inside the ./map_previews/ folder relative to the script:
-
-Supported Formats: .webp, .png, .jpg, .jpeg
-Supported Naming Formats: preview_mp_mapname.png (e.g., preview_mp_afghan.png), mp_mapname.webp (e.g., mp_rust.webp)
+Place your loading screen images inside the ./map_previews/ folder relative to the script.  
+  
+Supported Formats: .webp, .png, .jpg, .jpeg  
+Supported Naming Formats: preview_mp_mapname.png (e.g., preview_mp_afghan.png), mp_mapname.webp (e.g., mp_rust.webp)  
 
 ## 🤝 Credits & Acknowledgments
-IW4x Team / AlterWare: For developing and maintaining the IW4x client platform.
-INeedBots: For the IW4 BotWarfare mod implementation.
-Gemini (Google AI): Designed, architecture-planned, and co-developed in technical collaboration with Gemini.
+IW4x Team / AlterWare: For developing and maintaining the IW4x client platform.  
+INeedBots: For the IW4 BotWarfare mod implementation.  
+Gemini (Google AI): Designed, architecture-planned, and co-developed in technical collaboration with Gemini.  
