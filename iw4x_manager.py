@@ -1122,6 +1122,22 @@ class IW4xServerManager:
         self.log(f"[TAGS] Updated tags for {code}: [{tag_str}]")
 
     def build_map_rotation_string(self):
+        # Translate UI gametypes to MW2 internal engine codes
+        gt_engine_map = {
+            "tdm": "war",  # MW2 engine code for TDM is 'war'
+            "hq": "koth",  # MW2 engine code for HQ is 'koth' (King of the Hill)
+            "dm": "dm",
+            "dom": "dom",
+            "sd": "sd",
+            "ctf": "ctf",
+            "sab": "sab",
+            "dd": "dd",
+            "gun": "gun",
+            "gtnw": "gtnw",
+            "arena": "arena",
+            "oneflag": "oneflag",
+        }
+
         enabled_gt = [
             gt.lower() for gt, var in self.gt_vars.items() if var.get()
         ]
@@ -1130,7 +1146,7 @@ class IW4xServerManager:
 
         selected_maps = self.get_selected_maps()
         if not selected_maps:
-            return 'set sv_mapRotation "gametype tdm map mp_afghan"'
+            return 'set sv_mapRotation "gametype war map mp_afghan"'
 
         rotation_pairs = []
 
@@ -1142,19 +1158,23 @@ class IW4xServerManager:
             ]
 
             for gt in enabled_gt:
-                # If map has specific tags, only pair matching gametypes; otherwise allow all
+                engine_gt = gt_engine_map.get(gt, gt)
+
+                # Check if gametype is allowed on this map
                 if (
                     not allowed_tags
                     or "ALL" in allowed_tags
                     or gt.upper() in allowed_tags
+                    or engine_gt.upper() in allowed_tags
                 ):
-                    rotation_pairs.append((gt, code))
+                    rotation_pairs.append((engine_gt, code))
 
         # Fallback if tag filtering yielded no pairs
         if not rotation_pairs:
             for code in selected_maps:
                 for gt in enabled_gt:
-                    rotation_pairs.append((gt, code))
+                    engine_gt = gt_engine_map.get(gt, gt)
+                    rotation_pairs.append((engine_gt, code))
 
         # Shuffle rotation order if checkbox is enabled
         if self.randomize_rotation_var.get():
@@ -1163,10 +1183,10 @@ class IW4xServerManager:
         # Build execution string
         parts = []
         current_gt = None
-        for gt, map_code in rotation_pairs:
-            if gt != current_gt:
-                parts.append(f"gametype {gt}")
-                current_gt = gt
+        for engine_gt, map_code in rotation_pairs:
+            if engine_gt != current_gt:
+                parts.append(f"gametype {engine_gt}")
+                current_gt = engine_gt
             parts.append(f"map {map_code}")
 
         return f'set sv_mapRotation "{" ".join(parts)}"'
@@ -1589,6 +1609,22 @@ class IW4xServerManager:
         
         // GAMETYPE SETTINGS
         """
+        # Translation map for MW2 engine gametypes
+        gt_engine_map = {
+            "tdm": "war",
+            "hq": "koth",
+            "dm": "dm",
+            "dom": "dom",
+            "sd": "sd",
+            "ctf": "ctf",
+            "sab": "sab",
+            "dd": "dd",
+            "gun": "gun",
+            "gtnw": "gtnw",
+            "arena": "arena",
+            "oneflag": "oneflag",
+        }
+        
         # Gametype rule outputs
         for gt_code, _ in self.all_gametypes:
             rules = self.gt_rules_data[gt_code]
@@ -1620,23 +1656,20 @@ class IW4xServerManager:
         cfg += f"set bots_loadout_rank \"{self.bot_rank_var.get()}\"\n"
         cfg += f"set bots_loadout_prestige \"{self.bot_prestige_var.get()}\"\n\n"
 
-        # Gametype and map rotation assembly
+        # Set default startup gametype (translated)
         active_gts = [
-            code for code, var in self.gt_vars.items() if var.get()
+            gt.lower() for gt, var in self.gt_vars.items() if var.get()
         ]
-        if not active_gts:
-            active_gts = ["war"]
+        default_gt = active_gts[0] if active_gts else "tdm"
+        engine_default_gt = gt_engine_map.get(default_gt, default_gt)
 
-        selected_maps = self.get_selected_maps()
-        if not selected_maps:
-            selected_maps = ["mp_afghan"]
+        # Disable party mode & set default gametype
+        cfg += 'set party_enable "0"\n'
+        cfg += f'set g_gametype "{engine_default_gt}"\n\n'
 
-        cfg += f'set g_gametype "{active_gts[0]}"\n'
-
+        # Append map rotation
         map_rotation_line = self.build_map_rotation_string()
         cfg += f"{map_rotation_line}\n"
-
-        return cfg
 
     def save_config(self, show_popup=True):
         game_dir = self.path_var.get()
