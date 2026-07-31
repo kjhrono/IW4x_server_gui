@@ -53,7 +53,7 @@ IW4x-Server-Manager/
 └── <game_directory>/
     └── userraw/
         └── server.cfg       # Executable configuration file
-'''
+```
 
 ## 📦 Prerequisites
 
