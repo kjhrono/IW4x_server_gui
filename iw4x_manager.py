@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import platform
 import subprocess
 import random
 import tkinter as tk
@@ -1124,8 +1125,8 @@ class IW4xServerManager:
     def build_map_rotation_string(self):
         # Translate UI gametypes to MW2 internal engine codes
         gt_engine_map = {
-            "tdm": "war",  # MW2 engine code for TDM is 'war'
-            "hq": "koth",  # MW2 engine code for HQ is 'koth' (King of the Hill)
+            "tdm": "war",  # TDM engine code is 'war'
+            "hq": "koth",  # HQ engine code is 'koth'
             "dm": "dm",
             "dom": "dom",
             "sd": "sd",
@@ -1146,11 +1147,10 @@ class IW4xServerManager:
 
         selected_maps = self.get_selected_maps()
         if not selected_maps:
-            return 'set sv_mapRotation "gametype war map mp_afghan"'
+            selected_maps = ["mp_afghan"]
 
-        rotation_pairs = []
-
-        # Pair each selected map with allowed enabled gametypes based on map tags
+        # Group maps cleanly by gametype
+        gt_map_dict = {}
         for code in selected_maps:
             map_tag_str = self.map_tags.get(code, "").upper()
             allowed_tags = [
@@ -1159,37 +1159,32 @@ class IW4xServerManager:
 
             for gt in enabled_gt:
                 engine_gt = gt_engine_map.get(gt, gt)
-
-                # Check if gametype is allowed on this map
                 if (
                     not allowed_tags
                     or "ALL" in allowed_tags
                     or gt.upper() in allowed_tags
                     or engine_gt.upper() in allowed_tags
                 ):
-                    rotation_pairs.append((engine_gt, code))
+                    if engine_gt not in gt_map_dict:
+                        gt_map_dict[engine_gt] = []
+                    if code not in gt_map_dict[engine_gt]:
+                        gt_map_dict[engine_gt].append(code)
 
-        # Fallback if tag filtering yielded no pairs
-        if not rotation_pairs:
-            for code in selected_maps:
-                for gt in enabled_gt:
-                    engine_gt = gt_engine_map.get(gt, gt)
-                    rotation_pairs.append((engine_gt, code))
+        # Fallback if no map-tag matches were found
+        if not gt_map_dict:
+            first_gt = gt_engine_map.get(enabled_gt[0], enabled_gt[0])
+            gt_map_dict[first_gt] = selected_maps
 
-        # Shuffle rotation order if checkbox is enabled
-        if self.randomize_rotation_var.get():
-            random.shuffle(rotation_pairs)
-
-        # Build execution string
+        # Build clean string: gametype war map mp_afghan map mp_rust gametype dm map mp_terminal
         parts = []
-        current_gt = None
-        for engine_gt, map_code in rotation_pairs:
-            if engine_gt != current_gt:
+        for engine_gt, maps_list in gt_map_dict.items():
+            if maps_list:
                 parts.append(f"gametype {engine_gt}")
-                current_gt = engine_gt
-            parts.append(f"map {map_code}")
+                for m in maps_list:
+                    parts.append(f"map {m}")
 
-        return f'set sv_mapRotation "{" ".join(parts)}"'
+        rotation_str = " ".join(parts)
+        return f'set sv_mapRotation "{rotation_str}"'
 
     def on_map_click(self, event):
         lb = event.widget
@@ -1578,37 +1573,41 @@ class IW4xServerManager:
 
     # --- CONFIG GENERATION LOGIC ---
     def generate_cfg(self):
+        # Quick helper functions to avoid f-string quote syntax errors
+        b = lambda var: "1" if var.get() else "0"
+        split0 = lambda var: var.get().split(" ")[0]
+
         cfg = f"""// IW4x Configuration File
-        
-        set sv_hostname "{self.hostname_var.get()}"
-        set sv_motd "{self.motd_var.get()}"
-        set rcon_password "{self.rcon_var.get()}"
-        set g_password ""
-        set sv_maxclients "{self.maxplayers_var.get()}"
-        set party_maxplayers "{self.maxplayers_var.get()}"
-        
-        set g_inactivity "{self.inactivity_var.get()}"
-        set g_inactivitySpectator "{self.spec_inactivity_var.get()}"
-        
-        set g_hardcore "{"1" if self.hc_var.get() else "0"}"
-        set scr_hardcore "{"1" if self.hc_var.get() else "0"}"
-        set scr_team_fftype "{self.ff_var.get().split(" ")[0]}"
-        set scr_game_spectatetype "{self.spectate_var.get().split(" ")[0]}"
-        set sv_allowAimAssist "{"1" if self.aim_assist_var.get() else "0"}"
-        
-        // XP & SCORE CONFIGURATION
-        set scr_xpscale "{self.xpscale_var.get()}"
-        set scr_war_score_kill "{self.xp_kill_var.get()}"
-        set scr_war_score_headshot "{self.xp_headshot_var.get()}"
-        set scr_war_score_assist "{self.xp_assist_var.get()}"
-        set scr_war_score_death "{self.xp_death_var.get()}"
-        set scr_war_score_suicide "{self.xp_suicide_var.get()}"
-        
-        set scr_game_allowkillcam "{"1" if self.killcam_var.get() else "0"}"
-        set scr_teambalance "{"1" if self.teambalance_var.get() else "0"}"
-        
-        // GAMETYPE SETTINGS
-        """
+
+	set sv_hostname "{self.hostname_var.get()}"
+	set sv_motd "{self.motd_var.get()}"
+	set rcon_password "{self.rcon_var.get()}"
+	set g_password ""
+	set sv_maxclients "{self.maxplayers_var.get()}"
+	set party_maxplayers "{self.maxplayers_var.get()}"
+
+	set g_inactivity "{self.inactivity_var.get()}"
+	set g_inactivitySpectator "{self.spec_inactivity_var.get()}"
+
+	set g_hardcore "{b(self.hc_var)}"
+	set scr_hardcore "{b(self.hc_var)}"
+	set scr_team_fftype "{split0(self.ff_var)}"
+	set scr_game_spectatetype "{split0(self.spectate_var)}"
+	set sv_allowAimAssist "{b(self.aim_assist_var)}"
+
+	// XP & SCORE CONFIGURATION
+	set scr_xpscale "{self.xpscale_var.get()}"
+	set scr_war_score_kill "{self.xp_kill_var.get()}"
+	set scr_war_score_headshot "{self.xp_headshot_var.get()}"
+	set scr_war_score_assist "{self.xp_assist_var.get()}"
+	set scr_war_score_death "{self.xp_death_var.get()}"
+	set scr_war_score_suicide "{self.xp_suicide_var.get()}"
+
+	set scr_game_allowkillcam "{b(self.killcam_var)}"
+	set scr_teambalance "{b(self.teambalance_var)}"
+
+	"""
+
         # Translation map for MW2 engine gametypes
         gt_engine_map = {
             "tdm": "war",
@@ -1624,52 +1623,70 @@ class IW4xServerManager:
             "arena": "arena",
             "oneflag": "oneflag",
         }
-        
-        # Gametype rule outputs
+
+        # Gametype rule outputs (using translated MW2 engine gametype names)
+        cfg += "// GAMETYPE RULES\n"
         for gt_code, _ in self.all_gametypes:
             rules = self.gt_rules_data[gt_code]
-            cfg += f"set scr_{gt_code}_scorelimit \"{rules['scorelimit']}\"\n"
-            cfg += f"set scr_{gt_code}_timelimit \"{rules['timelimit']}\"\n"
-            cfg += f"set scr_{gt_code}_playerrespawndelay \"{rules['respawn']}\"\n"
-            cfg += f"set scr_{gt_code}_numlives \"{rules['lives']}\"\n"
-            cfg += f"set scr_{gt_code}_roundlimit \"{rules['roundlimit']}\"\n"
-            cfg += f"set scr_{gt_code}_winlimit \"{rules['winlimit']}\"\n\n"
+            engine_gt = gt_engine_map.get(gt_code.lower(), gt_code.lower())
+            cfg += f'set scr_{engine_gt}_scorelimit "{rules["scorelimit"]}"\n'
+            cfg += f'set scr_{engine_gt}_timelimit "{rules["timelimit"]}"\n'
+            cfg += f'set scr_{engine_gt}_playerrespawndelay "{rules["respawn"]}"\n'
+            cfg += f'set scr_{engine_gt}_numlives "{rules["lives"]}"\n'
+            cfg += f'set scr_{engine_gt}_roundlimit "{rules["roundlimit"]}"\n'
+            cfg += f'set scr_{engine_gt}_winlimit "{rules["winlimit"]}"\n\n'
 
         # Extended BotWarfare configuration
         cfg += "// BOTWARFARE CONFIGURATION\n"
-        cfg += f"set bots_main \"{"1" if self.bot_enable_var.get() else "0"}\"\n"
-        cfg += f"set bots_main_waitForHostTime \"{self.bot_wait_var.get()}\"\n"
-        cfg += f"set bots_main_menu \"{"1" if self.bot_menu_var.get() else "0"}\"\n"
-        cfg += f"set bots_main_kickBotsAtEnd \"{"1" if self.bot_kick_end_var.get() else "0"}\"\n"
-        cfg += f"set bots_main_chat \"{self.bot_chat_var.get()}\"\n"
 
-        cfg += f"set bots_manage_fill \"{self.bot_fill_var.get()}\"\n"
-        cfg += f"set bots_manage_fill_mode \"{self.bot_fill_mode_var.get().split(" ")[0]}\"\n"
-        cfg += f"set bots_manage_fill_watchplayers \"{"1" if self.bot_watch_var.get() else "0"}\"\n"
-        cfg += f"set bots_manage_fill_kick \"{"1" if self.bot_fill_kick_var.get() else "0"}\"\n"
+	# Tell IW4x to load the BotWarfare mod folder if bots are enabled
+        if self.bot_enable_var.get():
+            cfg += 'set fs_game "mods/bots"\n'
+        else:
+            cfg += 'set fs_game ""\n'
 
-        cfg += f"set bots_skill \"{self.bot_skill_var.get().split(" ")[0]}\"\n"
-        cfg += f"set bots_skill_min \"{self.bot_skill_min_var.get()}\"\n"
-        cfg += f"set bots_skill_max \"{self.bot_skill_max_var.get()}\"\n"
+        cfg += f'set bots_main "{b(self.bot_enable_var)}"\n'
+        cfg += f'set bots_main_waitForHostTime "{self.bot_wait_var.get()}"\n'
+        cfg += f'set bots_main_menu "{b(self.bot_menu_var)}"\n'
+        cfg += f'set bots_main_kickBotsAtEnd "{b(self.bot_kick_end_var)}"\n'
+        cfg += f'set bots_chat "{self.bot_chat_var.get()}"\n'
 
-        cfg += f"set bots_loadout_allow_op \"{"1" if self.bot_allow_op_var.get() else "0"}\"\n"
-        cfg += f"set bots_loadout_rank \"{self.bot_rank_var.get()}\"\n"
-        cfg += f"set bots_loadout_prestige \"{self.bot_prestige_var.get()}\"\n\n"
+        cfg += f'set bots_manage_fill "{self.bot_fill_var.get()}"\n'
+        cfg += f'set bots_manage_fill_mode "{split0(self.bot_fill_mode_var)}"\n'
+        cfg += (
+            f'set bots_manage_fill_watchplayers "{b(self.bot_watch_var)}"\n'
+        )
+        cfg += f'set bots_manage_fill_kick "{b(self.bot_fill_kick_var)}"\n'
 
-        # Set default startup gametype (translated)
+        cfg += f'set bots_skill "{split0(self.bot_skill_var)}"\n'
+        cfg += f'set bots_skill_min "{self.bot_skill_min_var.get()}"\n'
+        cfg += f'set bots_skill_max "{self.bot_skill_max_var.get()}"\n'
+
+        cfg += (
+            f'set bots_loadout_allow_op "{b(self.bot_allow_op_var)}"\n'
+        )
+        cfg += f'set bots_loadout_rank "{self.bot_rank_var.get()}"\n'
+        cfg += f'set bots_loadout_prestige "{self.bot_prestige_var.get()}"\n\n'
+
+        # Set default startup gametype
         active_gts = [
             gt.lower() for gt, var in self.gt_vars.items() if var.get()
         ]
         default_gt = active_gts[0] if active_gts else "tdm"
         engine_default_gt = gt_engine_map.get(default_gt, default_gt)
 
-        # Disable party mode & set default gametype
         cfg += 'set party_enable "0"\n'
         cfg += f'set g_gametype "{engine_default_gt}"\n\n'
 
-        # Append map rotation
+        # Native IW4x Randomizer DVar (1 = Random rotation, 0 = Sequential)
+        rand_flag = "1" if self.randomize_rotation_var.get() else "0"
+        cfg += f'set sv_randomMapRotation "{rand_flag}"\n'
+
+        # Map rotation
         map_rotation_line = self.build_map_rotation_string()
         cfg += f"{map_rotation_line}\n"
+
+        return cfg
 
     def save_config(self, show_popup=True):
         game_dir = self.path_var.get()
@@ -1703,8 +1720,15 @@ class IW4xServerManager:
             messagebox.showerror("Error", f"Failed to save server.cfg:\n{e}")
             return False
 
+    def launch_server(self):
+        """Main entry point for launching the server on any OS."""
+        if platform.system() == "Windows":
+            self.launch_server_windows()
+        else:
+            self.launch_server_linux()
+
     def launch_server_linux(self):
-        game_dir = self.path_var.get()
+        game_dir = os.path.abspath(self.path_var.get())
         exe_path = os.path.join(game_dir, "iw4x.exe")
 
         if not os.path.isfile(exe_path):
@@ -1726,16 +1750,13 @@ class IW4xServerManager:
             f"+exec server.cfg +map_rotate"
         )
 
+        # Added pause so terminal stays open if server crashes/exits
+        pause_cmd = f"{wine_cmd}; echo ''; echo '--- Server process ended. Press Enter to close ---'; read"
+
         terminals = [
-            ["x-terminal-emulator", "-e", wine_cmd],
-            [
-                "gnome-terminal",
-                "--",
-                "bash",
-                "-c",
-                f"{wine_cmd}; read -p 'Server stopped. Press Enter to close...'",
-            ],
-            ["xterm", "-e", wine_cmd],
+            ["gnome-terminal", "--", "bash", "-c", pause_cmd],
+            ["x-terminal-emulator", "-e", f"bash -c '{pause_cmd}'"],
+            ["xterm", "-e", f"bash -c '{pause_cmd}'"],
         ]
 
         launched = False
@@ -1777,10 +1798,11 @@ class IW4xServerManager:
                 )
             except Exception as e:
                 self.log(f"[ERROR] Failed to start process: {e}")
-                messagebox.showerror("Error", f"Could not launch process:\n{e}")
+                messagebox.showerror(
+                    "Error", f"Could not launch process:\n{e}"
+                )
 
     def launch_server_windows(self):
-        # Resolve absolute path to ensure Explorer launcher finds it
         game_dir = os.path.abspath(self.path_var.get())
         exe_path = os.path.join(game_dir, "iw4x.exe")
 
@@ -1798,7 +1820,7 @@ class IW4xServerManager:
         port = self.port_var.get()
 
         cmd = [
-            exe_path,  # Use full absolute path to exe
+            exe_path,
             "-dedicated",
             "-g_log",
             "games_mp.log",
