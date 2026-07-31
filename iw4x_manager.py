@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 
 class IW4xServerManager:
@@ -16,9 +16,40 @@ class IW4xServerManager:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         os.chdir(script_dir)
 
+        # Window config
         self.root.title("IW4x Linux/Windows Server Configurator")
         self.root.geometry("640x480")
         self.root.minsize(820, 780)
+
+        # Default Community Map Tags
+        self.default_tags = {
+            "mp_afghan": "TDM, DOM, SD, CTF, SAB",
+            "mp_derail": "TDM, DOM, SD",
+            "mp_estate": "TDM, DOM, CTF, SAB",
+            "mp_favela": "TDM, DM, DOM, SD, HQ",
+            "mp_highrise": "TDM, DM, DOM, SD, CTF, SAB",
+            "mp_invasion": "TDM, DOM, SD",
+            "mp_checkpoint": "TDM, DM, DOM, SD, HQ",
+            "mp_quarry": "TDM, DOM, SD, HQ",
+            "mp_rundown": "TDM, DOM, SD",
+            "mp_rust": "DM, TDM, GUN",
+            "mp_boneyard": "TDM, DM, DOM, SD, CTF",
+            "mp_nightshift": "TDM, DM, DOM, SD, HQ",
+            "mp_subbase": "TDM, DOM, SD, CTF",
+            "mp_terminal": "TDM, DM, DOM, SD, CTF",
+            "mp_underpass": "TDM, DOM, SD",
+            "mp_brecourt": "TDM, DOM, SD",
+            "mp_nuked": "DM, TDM, DOM, GUN",
+            "mp_crash": "TDM, DM, DOM, SD, HQ",
+            "mp_vacant": "TDM, DM, DOM, SD, HQ",
+            "mp_strike": "TDM, DOM, SD",
+            "mp_cross_fire": "TDM, DOM, SD, CTF",
+            "mp_shipment": "DM, TDM, GUN",
+            "mp_dome": "DM, TDM, DOM, GUN",
+        }
+
+        # Load user-modified map tags if present
+        self.map_tags = self.load_map_tags()
 
         # Main Layout: Top Notebook for settings, Bottom Frame for persistent controls
         self.notebook = ttk.Notebook(root)
@@ -610,8 +641,41 @@ class IW4xServerManager:
         self.log(f"[CONFIG] Applied rules for gametype '{gt}'")
 
     # --- TAB 4: MAP ROTATION (DLC CATEGORIZED & PERSISTENT) ---
+    # --- TAB 4: MAP ROTATION (PRESETS & TAGS) ---
     def setup_maps_tab(self):
         f = self.tab_maps
+
+        # Top control bar for presets, tags, and scanning
+        top_bar = ttk.Frame(f)
+        top_bar.pack(fill="x", padx=5, pady=5)
+
+        ttk.Button(
+            top_bar,
+            text="Save Preset",
+            command=self.save_rotation_preset,
+            width=12,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Load Preset",
+            command=self.load_rotation_preset,
+            width=12,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Edit Selected Tag",
+            command=self.edit_selected_map_tag,
+            width=15,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Scan Directory",
+            command=self.scan_installed_maps,
+            width=14,
+        ).pack(side="left", padx=3)
 
         self.map_notebook = ttk.Notebook(f)
         self.map_notebook.pack(expand=True, fill="both", padx=5, pady=5)
@@ -696,7 +760,6 @@ class IW4xServerManager:
             sub_frame = ttk.Frame(self.map_notebook)
             self.map_notebook.add(sub_frame, text=category_name)
 
-            # CRITICAL FIX: exportselection=False prevents selection clearing when switching tabs
             lb = tk.Listbox(
                 sub_frame,
                 selectmode=tk.MULTIPLE,
@@ -704,16 +767,296 @@ class IW4xServerManager:
                 exportselection=False,
             )
             lb.pack(fill="both", expand=True, padx=5, pady=5)
-
-            for code, name in maps:
-                lb.insert(tk.END, f"{name} ({code})")
-
-            # Default select base maps
-            if category_name == "Base MW2":
-                for idx in range(len(maps)):
-                    lb.select_set(idx)
+            lb.bind("<<ListboxSelect>>", self.on_map_select)
 
             self.map_listboxes[category_name] = (lb, maps)
+
+        self.refresh_map_listboxes()
+
+        # Default select base maps initially
+        lb_base, maps_base = self.map_listboxes["Base MW2"]
+        for idx in range(len(maps_base)):
+            lb_base.select_set(idx)# --- TAB 4: MAP ROTATION (PRESETS & TAGS) ---
+    def setup_maps_tab(self):
+        f = self.tab_maps
+
+        # Top control bar for presets, tags, and scanning
+        top_bar = ttk.Frame(f)
+        top_bar.pack(fill="x", padx=5, pady=5)
+
+        ttk.Button(
+            top_bar,
+            text="Save Preset",
+            command=self.save_rotation_preset,
+            width=12,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Load Preset",
+            command=self.load_rotation_preset,
+            width=12,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Edit Selected Tag",
+            command=self.edit_selected_map_tag,
+            width=15,
+        ).pack(side="left", padx=3)
+
+        ttk.Button(
+            top_bar,
+            text="Scan Directory",
+            command=self.scan_installed_maps,
+            width=14,
+        ).pack(side="left", padx=3)
+
+        self.map_notebook = ttk.Notebook(f)
+        self.map_notebook.pack(expand=True, fill="both", padx=5, pady=5)
+
+        self.dlc_maps = {
+            "Base MW2": [
+                ("mp_afghan", "Afghan"),
+                ("mp_derail", "Derail"),
+                ("mp_estate", "Estate"),
+                ("mp_favela", "Favela"),
+                ("mp_highrise", "Highrise"),
+                ("mp_invasion", "Invasion"),
+                ("mp_checkpoint", "Karachi"),
+                ("mp_quarry", "Quarry"),
+                ("mp_rundown", "Rundown"),
+                ("mp_rust", "Rust"),
+                ("mp_boneyard", "Scrapyard"),
+                ("mp_nightshift", "Skidrow"),
+                ("mp_subbase", "Sub Base"),
+                ("mp_terminal", "Terminal"),
+                ("mp_underpass", "Underpass"),
+                ("mp_brecourt", "Wasteland"),
+            ],
+            "DLC 1-3": [
+                ("mp_complex", "Bailout"),
+                ("mp_crash", "Crash"),
+                ("mp_overgrown", "Overgrown"),
+                ("mp_compact", "Salvage"),
+                ("mp_storm", "Storm"),
+                ("mp_abandon", "Carnival"),
+                ("mp_fuel2", "Fuel"),
+                ("mp_strike", "Strike"),
+                ("mp_trailerpark", "Trailer Park"),
+                ("mp_vacant", "Vacant"),
+                ("mp_nuked", "Nuketown"),
+            ],
+            "DLC 4-9 (Classics)": [
+                ("mp_cross_fire", "Crossfire"),
+                ("mp_bloc", "Bloc"),
+                ("mp_cargoship", "Cargoship"),
+                ("mp_killhouse", "Killhouse"),
+                ("mp_bog_sh", "Bog"),
+                ("mp_cargoship_sh", "Freighter"),
+                ("mp_shipment", "Shipment"),
+                ("mp_shipment_long", "Long: Shipment"),
+                ("mp_rust_long", "Long: Rust"),
+                ("mp_firingrange", "Firing Range"),
+                ("mp_storm_spring", "Chemical Plant"),
+                ("mp_fav_tropical", "Tropical Favela"),
+                ("mp_estate_tropical", "Tropical Estate"),
+                ("mp_crash_tropical", "Tropical Crash"),
+                ("mp_bloc_sh", "Forgotten City"),
+                ("mp_backlot", "Backlot"),
+                ("mp_broadcast", "Broadcast"),
+                ("mp_carentan", "Chinatown"),
+                ("mp_citystreets", "District"),
+                ("mp_convoy", "Ambush"),
+                ("mp_countdown", "Countdown"),
+                ("mp_crash_snow", "Winter Crash"),
+                ("mp_farm", "Downpour"),
+                ("mp_pipeline", "Pipeline"),
+                ("mp_showdown", "Showdown"),
+            ],
+            "DLC 10 (MW3) & SP": [
+                ("mp_dome", "Dome"),
+                ("mp_hardhat", "Hardhat"),
+                ("mp_paris", "Resistance"),
+                ("mp_seatown", "Seatown"),
+                ("mp_bravo", "Mission"),
+                ("mp_underground", "Underground"),
+                ("mp_plaza2", "Arkaden"),
+                ("mp_village", "Village"),
+                ("mp_alpha", "Lockdown"),
+                ("oilrig", "Oilrig"),
+                ("co_hunted", "Village (Co-op)"),
+            ],
+        }
+
+        self.map_listboxes = {}
+
+        for category_name, maps in self.dlc_maps.items():
+            sub_frame = ttk.Frame(self.map_notebook)
+            self.map_notebook.add(sub_frame, text=category_name)
+
+            lb = tk.Listbox(
+                sub_frame,
+                selectmode=tk.MULTIPLE,
+                height=12,
+                exportselection=False,
+            )
+            lb.pack(fill="both", expand=True, padx=5, pady=5)
+            lb.bind("<<ListboxSelect>>", self.on_map_select)
+
+            self.map_listboxes[category_name] = (lb, maps)
+
+        self.refresh_map_listboxes()
+
+        # Default select base maps initially
+        lb_base, maps_base = self.map_listboxes["Base MW2"]
+        for idx in range(len(maps_base)):
+            lb_base.select_set(idx)
+            
+    def load_map_tags(self):
+        tags = dict(self.default_tags)
+        if os.path.exists("map_tags.json"):
+            try:
+                with open("map_tags.json", "r") as f:
+                    user_tags = json.load(f)
+                    tags.update(user_tags)
+            except Exception:
+                pass
+        return tags
+
+    def save_map_tags(self):
+        try:
+            with open("map_tags.json", "w") as f:
+                json.dump(self.map_tags, f, indent=4)
+        except Exception as e:
+            self.log(f"[WARN] Failed to save custom map tags: {e}")
+
+    def format_map_label(self, code, name, is_found=True):
+        tag_str = self.map_tags.get(code, "ALL")
+        prefix = "" if is_found else "[NOT FOUND] "
+        return f"{prefix}{name} ({code})   ▸  [{tag_str}]"
+
+    def refresh_map_listboxes(self):
+        for category_name, (lb, maps) in self.map_listboxes.items():
+            # Remember current selections
+            selected_indices = set(lb.curselection())
+            lb.delete(0, tk.END)
+
+            for idx, (code, name) in enumerate(maps):
+                # Check if text currently marked not found
+                is_found = True
+                lb.insert(
+                    tk.END, self.format_map_label(code, name, is_found=is_found)
+                )
+                if idx in selected_indices:
+                    lb.select_set(idx)
+
+    def edit_selected_map_tag(self):
+        # Find active listbox tab
+        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
+        category_name = list(self.dlc_maps.keys())[current_tab_idx]
+        lb, maps = self.map_listboxes[category_name]
+
+        selected = lb.curselection()
+        if not selected:
+            messagebox.showinfo(
+                "Info", "Please select a map in the current listbox to edit its tags."
+            )
+            return
+
+        idx = selected[0]
+        code, name = maps[idx]
+        current_tag = self.map_tags.get(code, "ALL")
+
+        new_tag = simpledialog.askstring(
+            "Edit Map Tags",
+            f"Enter recommended gametype tags for map '{name}' ({code}):\n(e.g., TDM, DOM, SD, CTF)",
+            initialvalue=current_tag,
+        )
+
+        if new_tag is not None:
+            self.map_tags[code] = new_tag.strip().upper()
+            self.save_map_tags()
+            self.refresh_map_listboxes()
+            self.log(f"[TAGS] Updated tags for {code}: [{self.map_tags[code]}]")
+
+    def save_rotation_preset(self):
+        selected_maps = self.get_selected_maps()
+        if not selected_maps:
+            messagebox.showwarning("Warning", "No maps are currently selected!")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("Rotation Presets", "*.json")],
+            title="Save Map Rotation Preset",
+        )
+        if filepath:
+            try:
+                with open(filepath, "w") as f:
+                    json.dump({"maps": selected_maps}, f, indent=4)
+                self.log(f"[PRESET] Saved rotation preset to: {filepath}")
+                messagebox.showinfo("Preset Saved", f"Rotation saved to:\n{filepath}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed saving preset:\n{e}")
+
+    def load_rotation_preset(self):
+        filepath = filedialog.askopenfilename(
+            filetypes=[("Rotation Presets", "*.json")],
+            title="Load Map Rotation Preset",
+        )
+        if filepath:
+            try:
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+                loaded_maps = set(data.get("maps", []))
+
+                # Clear all selections across all tabs and apply loaded map list
+                for category_name, (lb, maps) in self.map_listboxes.items():
+                    lb.selection_clear(0, tk.END)
+                    for idx, (code, name) in enumerate(maps):
+                        if code in loaded_maps:
+                            lb.select_set(idx)
+
+                self.log(
+                    f"[PRESET] Loaded rotation preset with {len(loaded_maps)} maps from: {filepath}"
+                )
+                messagebox.showinfo("Preset Loaded", f"Applied map rotation preset!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed loading preset:\n{e}")
+
+    def scan_installed_maps(self):
+        game_dir = self.path_var.get()
+        if not os.path.exists(game_dir):
+            messagebox.showerror("Error", "Invalid IW4x server directory path!")
+            return
+
+        found_maps = set()
+        for root, dirs, files in os.walk(game_dir):
+            for f in files:
+                if f.endswith(".ff"):
+                    found_maps.add(f[:-3].lower())
+            for d in dirs:
+                found_maps.add(d.lower())
+
+        for category_name, (lb, maps) in self.map_listboxes.items():
+            selected = set(lb.curselection())
+            lb.delete(0, tk.END)
+            for idx, (code, name) in enumerate(maps):
+                is_found = code.lower() in found_maps
+                lb.insert(
+                    tk.END, self.format_map_label(code, name, is_found=is_found)
+                )
+                if is_found:
+                    lb.itemconfig(idx, foreground="black")
+                else:
+                    lb.itemconfig(idx, foreground="gray")
+
+                if idx in selected:
+                    lb.select_set(idx)
+
+        self.log(f"[SCAN] Completed scanning installed maps in: {game_dir}")
+        messagebox.showinfo("Scan Complete", "Map directory scan finished!")
 
     def get_selected_maps(self):
         selected = []
