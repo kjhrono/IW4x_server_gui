@@ -1,5 +1,10 @@
 # 🎮 IW4x Server Configurator & Launche
 
+[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/)
+[![Game](https://img.shields.io/badge/Game-IW4x%20MW2-FF4500?style=for-the-badge)](https://alterware.dev/)
+[![AI Collaborator](https://img.shields.io/badge/Co--Developed%20With-Gemini-8E44AD?style=for-the-badge&logo=google&logoColor=white)](https://gemini.google.com/)
+
 A lightweight, cross-platform graphical configuration manager and server launcher for hosting **IW4x (Call of Duty: Modern Warfare 2)** dedicated servers on **Windows** and **Linux (Ubuntu / Mint Cinnamon)**.
 
 Built with Python and Tkinter, this tool eliminates manual `server.cfg` editing by providing a multi-tabbed interface to manage settings, map rotations, gametypes, XP scaling, and BotWarfare.
