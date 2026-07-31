@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import random
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -132,6 +133,9 @@ class IW4xServerManager:
 
         # Load map tags
         self.map_tags = self.load_map_tags()
+
+        # Set randomizator for maps
+        self.randomize_rotation_var = tk.BooleanVar(value=False)
 
         # Main Layout: Top Notebook for settings, Bottom Frame for persistent controls
         self.notebook = ttk.Notebook(root)
@@ -1011,6 +1015,13 @@ class IW4xServerManager:
             command=self.scan_installed_maps,
             width=16,
         ).pack(side="left", padx=4)
+
+        # Randomize Checkbox
+        ttk.Checkbutton(
+            top_bar,
+            text="🎲 Shuffle / Randomize Rotation Order",
+            variable=self.randomize_rotation_var,
+        ).pack(side="left", padx=12)
             
     def load_map_tags(self):
         tags = dict(self.default_tags)
@@ -1108,6 +1119,56 @@ class IW4xServerManager:
         self.refresh_map_listboxes()
         self.log(f"[TAGS] Updated tags for {code}: [{tag_str}]")
 
+    def build_map_rotation_string(self):
+        enabled_gt = [
+            gt.lower() for gt, var in self.gt_vars.items() if var.get()
+        ]
+        if not enabled_gt:
+            enabled_gt = ["tdm"]
+
+        selected_maps = self.get_selected_maps()
+        if not selected_maps:
+            return 'set sv_mapRotation "gametype tdm map mp_afghan"'
+
+        rotation_pairs = []
+
+        # Pair each selected map with allowed enabled gametypes based on map tags
+        for code in selected_maps:
+            map_tag_str = self.map_tags.get(code, "").upper()
+            allowed_tags = [
+                t.strip() for t in map_tag_str.split(",") if t.strip()
+            ]
+
+            for gt in enabled_gt:
+                # If map has specific tags, only pair matching gametypes; otherwise allow all
+                if (
+                    not allowed_tags
+                    or "ALL" in allowed_tags
+                    or gt.upper() in allowed_tags
+                ):
+                    rotation_pairs.append((gt, code))
+
+        # Fallback if tag filtering yielded no pairs
+        if not rotation_pairs:
+            for code in selected_maps:
+                for gt in enabled_gt:
+                    rotation_pairs.append((gt, code))
+
+        # Shuffle rotation order if checkbox is enabled
+        if self.randomize_rotation_var.get():
+            random.shuffle(rotation_pairs)
+
+        # Build execution string
+        parts = []
+        current_gt = None
+        for gt, map_code in rotation_pairs:
+            if gt != current_gt:
+                parts.append(f"gametype {gt}")
+                current_gt = gt
+            parts.append(f"map {map_code}")
+
+        return f'set sv_mapRotation "{" ".join(parts)}"'
+
     def on_map_select(self, event):
         lb = event.widget
         category_name = None
@@ -1120,18 +1181,22 @@ class IW4xServerManager:
             return
 
         maps = self.map_listboxes[category_name][1]
-        selected_indices = lb.curselection()
 
-        if selected_indices:
-            last_idx = selected_indices[-1]
-            code, name = maps[last_idx]
+        # Use ACTIVE index (item clicked/focused by user)
+        try:
+            active_idx = lb.index(tk.ACTIVE)
+        except Exception:
+            return
 
-            # Update right panel details
-            self.update_map_details_panel(code, name)
+        if 0 <= active_idx < len(maps):
+            code, name = maps[active_idx]
 
-            # Prevent selecting uninstalled maps
+            # If user clicked an uninstalled map, deselect it
             if code.lower() not in self.found_maps:
-                lb.selection_clear(last_idx)
+                lb.selection_clear(active_idx)
+            else:
+                # Update right details panel for the specifically clicked map
+                self.update_map_details_panel(code, name)
 
     def format_map_label(self, code, name):
         tag_str = self.map_tags.get(code, "ALL")
@@ -1184,49 +1249,58 @@ class IW4xServerManager:
             self.log(f"[TAGS] Updated tags for {code}: [{self.map_tags[code]}]")
 
     def save_rotation_preset(self):
-        selected_maps = self.get_selected_maps()
-        if not selected_maps:
-            messagebox.showwarning("Warning", "No maps are currently selected!")
-            return
-
         filepath = filedialog.asksaveasfilename(
+            initialdir=APP_DIR,
             defaultextension=".json",
-            filetypes=[("Rotation Presets", "*.json")],
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
             title="Save Map Rotation Preset",
         )
-        if filepath:
-            try:
-                with open(filepath, "w") as f:
-                    json.dump({"maps": selected_maps}, f, indent=4)
-                self.log(f"[PRESET] Saved rotation preset to: {filepath}")
-                messagebox.showinfo("Preset Saved", f"Rotation saved to:\n{filepath}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed saving preset:\n{e}")
+        if not filepath:
+            return
+
+        selected_maps = self.get_selected_maps()
+        data = {"selected_maps": selected_maps, "map_tags": self.map_tags}
+        try:
+            with open(filepath, "w") as f:
+                json.dump(data, f, indent=4)
+            messagebox.showinfo(
+                "Success", f"Preset saved to:\n{os.path.basename(filepath)}"
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save preset:\n{e}")
 
     def load_rotation_preset(self):
         filepath = filedialog.askopenfilename(
-            filetypes=[("Rotation Presets", "*.json")],
+            initialdir=APP_DIR,
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
             title="Load Map Rotation Preset",
         )
-        if filepath:
-            try:
-                with open(filepath, "r") as f:
-                    data = json.load(f)
-                loaded_maps = set(data.get("maps", []))
+        if not filepath:
+            return
 
-                # Clear all selections across all tabs and apply loaded map list
-                for category_name, (lb, maps) in self.map_listboxes.items():
-                    lb.selection_clear(0, tk.END)
-                    for idx, (code, name) in enumerate(maps):
-                        if code in loaded_maps:
-                            lb.select_set(idx)
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
 
-                self.log(
-                    f"[PRESET] Loaded rotation preset with {len(loaded_maps)} maps from: {filepath}"
-                )
-                messagebox.showinfo("Preset Loaded", f"Applied map rotation preset!")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed loading preset:\n{e}")
+            saved_maps = set(data.get("selected_maps", []))
+
+            # Deselect all, then select loaded installed maps
+            for category, (lb, maps) in self.map_listboxes.items():
+                lb.selection_clear(0, tk.END)
+                for idx, (code, name) in enumerate(maps):
+                    if code in saved_maps and code.lower() in self.found_maps:
+                        lb.select_set(idx)
+
+            if "map_tags" in data:
+                self.map_tags.update(data["map_tags"])
+                self.save_map_tags()
+                self.refresh_map_listboxes()
+
+            messagebox.showinfo(
+                "Success", f"Preset loaded from:\n{os.path.basename(filepath)}"
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load preset:\n{e}")
 
     def scan_installed_maps(self, silent=False):
         game_dir = self.path_var.get()
@@ -1483,7 +1557,6 @@ class IW4xServerManager:
     # --- CONFIG GENERATION LOGIC ---
     def generate_cfg(self):
         cfg = f"""// IW4x Configuration File
-        // Generated by IW4x Linux Server Configurator
         
         set sv_hostname "{self.hostname_var.get()}"
         set sv_motd "{self.motd_var.get()}"
@@ -1558,14 +1631,8 @@ class IW4xServerManager:
 
         cfg += f'set g_gametype "{active_gts[0]}"\n'
 
-        rotation_elements = []
-        for gt in active_gts:
-            rotation_elements.append(f"gametype {gt}")
-            for m in selected_maps:
-                rotation_elements.append(f"map {m}")
-
-        rotation_str = " ".join(rotation_elements)
-        cfg += f'set sv_mapRotation "{rotation_str}"\n'
+        map_rotation_line = self.build_map_rotation_string()
+        cfg += f"{map_rotation_line}\n"
 
         return cfg
 
@@ -1757,6 +1824,7 @@ class IW4xServerManager:
             "gametypes": {code: var.get() for code, var in self.gt_vars.items()},
             "gt_rules": self.gt_rules_data,
             "selected_maps": self.get_selected_maps(),
+            "randomize_rotation": self.randomize_rotation_var.get(),
             "bot_enable": self.bot_enable_var.get(),
             "bot_wait": self.bot_wait_var.get(),
             "bot_menu": self.bot_menu_var.get(),
@@ -1833,6 +1901,11 @@ class IW4xServerManager:
                     for idx, (code, name) in enumerate(maps):
                         if code in saved_maps and code.lower() in self.found_maps:
                             lb.select_set(idx)
+
+            # Restore Map randomization
+            self.randomize_rotation_var.set(
+                state.get("randomize_rotation", self.randomize_rotation_var.get())
+            )
 
             # Restore Bots
             self.bot_enable_var.set(state.get("bot_enable", self.bot_enable_var.get()))
