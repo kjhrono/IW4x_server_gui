@@ -985,7 +985,9 @@ class IW4xServerManager:
                 exportselection=False,
             )
             lb.pack(fill="both", expand=True, padx=3, pady=3)
-            lb.bind("<<ListboxSelect>>", self.on_map_select)
+
+            # Bind mouse click release directly to calculate exact row clicked
+            lb.bind("<ButtonRelease-1>", self.on_map_click)
 
             self.map_listboxes[category_name] = (lb, maps)
 
@@ -1169,7 +1171,7 @@ class IW4xServerManager:
 
         return f'set sv_mapRotation "{" ".join(parts)}"'
 
-    def on_map_select(self, event):
+    def on_map_click(self, event):
         lb = event.widget
         category_name = None
         for cat, (box, maps) in self.map_listboxes.items():
@@ -1182,21 +1184,21 @@ class IW4xServerManager:
 
         maps = self.map_listboxes[category_name][1]
 
-        # Use ACTIVE index (item clicked/focused by user)
-        try:
-            active_idx = lb.index(tk.ACTIVE)
-        except Exception:
-            return
+        # Get exact row index under mouse cursor
+        idx = lb.nearest(event.y)
+        bbox = lb.bbox(idx)
 
-        if 0 <= active_idx < len(maps):
-            code, name = maps[active_idx]
+        # Ensure click occurred on an item row, not empty space
+        if bbox and bbox[1] <= event.y <= (bbox[1] + bbox[3]):
+            if 0 <= idx < len(maps):
+                code, name = maps[idx]
 
-            # If user clicked an uninstalled map, deselect it
-            if code.lower() not in self.found_maps:
-                lb.selection_clear(active_idx)
-            else:
-                # Update right details panel for the specifically clicked map
+                # Update details panel immediately for clicked map
                 self.update_map_details_panel(code, name)
+
+                # If map is uninstalled, prevent selection
+                if code.lower() not in self.found_maps:
+                    self.root.after(10, lambda: lb.selection_clear(idx))
 
     def format_map_label(self, code, name):
         tag_str = self.map_tags.get(code, "ALL")
