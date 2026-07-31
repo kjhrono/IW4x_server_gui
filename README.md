@@ -1,4 +1,4 @@
-# 🎮 IW4x Server Configurator & Launche
+# 🎮 IW4x Server Configurator & Launcher
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/)
