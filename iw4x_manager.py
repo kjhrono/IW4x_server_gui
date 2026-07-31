@@ -1572,27 +1572,33 @@ class IW4xServerManager:
     def save_config(self, show_popup=True):
         game_dir = self.path_var.get()
         if not os.path.exists(game_dir):
-            messagebox.showerror("Error", "Invalid IW4x server directory path!")
+            messagebox.showerror(
+                "Error", "Invalid IW4x server directory path!"
+            )
             return False
 
+        # Ensure <game_directory>/userraw/ exists
         userraw_dir = os.path.join(game_dir, "userraw")
         os.makedirs(userraw_dir, exist_ok=True)
+
         cfg_path = os.path.join(userraw_dir, "server.cfg")
 
         try:
-            with open(cfg_path, "w") as f:
-                f.write(self.generate_cfg())
+            cfg_content = self.generate_cfg()
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(cfg_content)
 
-            # Save state to JSON for auto-loading
-            self.save_app_state()
+            self.save_app_state()  # Saves manager state to script's ./ folder
+            self.log(f"[CONFIG] Wrote server.cfg successfully to {cfg_path}")
 
-            self.log(f"[OK] Configuration written to: {cfg_path}")
             if show_popup:
-                messagebox.showinfo("Saved", f"server.cfg generated:\n{cfg_path}")
+                messagebox.showinfo(
+                    "Success", f"server.cfg saved successfully to:\n{cfg_path}"
+                )
             return True
         except Exception as e:
-            self.log(f"[ERROR] Save failed: {e}")
-            messagebox.showerror("Error", f"Failed writing file:\n{e}")
+            self.log(f"[ERROR] Failed to write server.cfg: {e}")
+            messagebox.showerror("Error", f"Failed to save server.cfg:\n{e}")
             return False
 
     def launch_server_linux(self):
