@@ -361,19 +361,41 @@ class IW4xServerManager:
                 self.aim_assist_var.set(dvars["sv_allowaimassist"] == "1")
 
             if "scr_xpscale" in dvars:
-                self.xpscale_var.set(dvars["scr_xpscale"])
+                self.xpscale_var.set(
+                    dvars["scr_xpscale"][:1]
+                )  # xpscale is max 1 digit (1-4)
+
             if "scr_war_score_kill" in dvars:
-                self.xp_kill_var.set(dvars["scr_war_score_kill"])
+                val = "".join(filter(str.isdigit, dvars["scr_war_score_kill"]))
+                self.xp_kill_var.set(val[:3])  # Max 3 digits
+
             if "scr_war_score_headshot" in dvars:
-                self.xp_headshot_var.set(dvars["scr_war_score_headshot"])
+                val = "".join(
+                    filter(str.isdigit, dvars["scr_war_score_headshot"])
+                )
+                self.xp_headshot_var.set(val[:3])  # Max 3 digits
+
             if "scr_war_score_assist" in dvars:
-                self.xp_assist_var.set(dvars["scr_war_score_assist"])
+                val = "".join(
+                    filter(str.isdigit, dvars["scr_war_score_assist"])
+                )
+                self.xp_assist_var.set(val[:3])  # Max 3 digits
+
             if "scr_war_score_death" in dvars:
-                self.xp_death_var.set(dvars["scr_war_score_death"])
+                val = "".join(
+                    filter(str.isdigit, dvars["scr_war_score_death"])
+                )
+                self.xp_death_var.set(val[:3])  # Max 3 digits
+
             if "scr_war_score_suicide" in dvars:
-                self.xp_suicide_var.set(dvars["scr_war_score_suicide"])
+                val = "".join(
+                    filter(str.isdigit, dvars["scr_war_score_suicide"])
+                )
+                self.xp_suicide_var.set(val[:3])  # Max 3 digits
+
             if "scr_game_allowkillcam" in dvars:
                 self.killcam_var.set(dvars["scr_game_allowkillcam"] == "1")
+
             if "scr_teambalance" in dvars:
                 self.teambalance_var.set(dvars["scr_teambalance"] == "1")
 
@@ -454,6 +476,20 @@ class IW4xServerManager:
     def setup_gameplay_tab(self):
         f = self.tab_gameplay
 
+        # 1. DEFINE VALIDATORS FIRST
+        vcmd_3digits = (
+            f.register(lambda P: P == "" or (P.isdigit() and len(P) <= 3)),
+            "%P",
+        )
+        vcmd_xpscale = (
+            f.register(
+                lambda P: P == ""
+                or (P.isdigit() and len(P) <= 1 and P in "1234")
+            ),
+            "%P",
+        )
+
+        # 2. GENERAL GAMEPLAY RULES SECTION
         rules_frame = ttk.LabelFrame(f, text="General Gameplay Rules")
         rules_frame.pack(fill="x", padx=10, pady=5)
 
@@ -518,57 +554,94 @@ class IW4xServerManager:
             variable=self.aim_assist_var,
         ).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=4)
 
-        # XP & Score Multipliers Section
+        # 3. XP & SCORE MULTIPLIERS SECTION
         xp_frame = ttk.LabelFrame(f, text="XP Scale & Category Multipliers")
         xp_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(xp_frame, text="Global XP Scale (scr_xpscale):").grid(
+        ttk.Label(xp_frame, text="Global XP Scale (scr_xpscale 1-4):").grid(
             row=0, column=0, sticky="w", padx=10, pady=4
         )
         self.xpscale_var = tk.StringVar(value="1")
-        ttk.Entry(xp_frame, textvariable=self.xpscale_var, width=10).grid(
-            row=0, column=1, sticky="w", padx=5, pady=4
-        )
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xpscale_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_xpscale,
+        ).grid(row=0, column=1, sticky="w", padx=5, pady=4)
 
         ttk.Label(xp_frame, text="XP per Kill (scr_war_score_kill):").grid(
             row=1, column=0, sticky="w", padx=10, pady=4
         )
-        self.xp_kill_var = tk.StringVar(value="0")
-        ttk.Entry(xp_frame, textvariable=self.xp_kill_var, width=10).grid(
-            row=1, column=1, sticky="w", padx=5, pady=4
-        )
+        self.xp_kill_var = tk.StringVar(value="100")
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xp_kill_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_3digits,
+        ).grid(row=1, column=1, sticky="w", padx=5, pady=4)
 
         ttk.Label(
             xp_frame, text="XP per Headshot (scr_war_score_headshot):"
         ).grid(row=2, column=0, sticky="w", padx=10, pady=4)
-        self.xp_headshot_var = tk.StringVar(value="0")
-        ttk.Entry(xp_frame, textvariable=self.xp_headshot_var, width=10).grid(
-            row=2, column=1, sticky="w", padx=5, pady=4
-        )
+        self.xp_headshot_var = tk.StringVar(value="50")
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xp_headshot_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_3digits,
+        ).grid(row=2, column=1, sticky="w", padx=5, pady=4)
 
         ttk.Label(
             xp_frame, text="XP per Assist (scr_war_score_assist):"
         ).grid(row=3, column=0, sticky="w", padx=10, pady=4)
-        self.xp_assist_var = tk.StringVar(value="0")
-        ttk.Entry(xp_frame, textvariable=self.xp_assist_var, width=10).grid(
-            row=3, column=1, sticky="w", padx=5, pady=4
-        )
+        self.xp_assist_var = tk.StringVar(value="20")
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xp_assist_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_3digits,
+        ).grid(row=3, column=1, sticky="w", padx=5, pady=4)
 
         ttk.Label(xp_frame, text="XP per Death (scr_war_score_death):").grid(
             row=4, column=0, sticky="w", padx=10, pady=4
         )
         self.xp_death_var = tk.StringVar(value="0")
-        ttk.Entry(xp_frame, textvariable=self.xp_death_var, width=10).grid(
-            row=4, column=1, sticky="w", padx=5, pady=4
-        )
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xp_death_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_3digits,
+        ).grid(row=4, column=1, sticky="w", padx=5, pady=4)
 
         ttk.Label(
             xp_frame, text="XP per Suicide (scr_war_score_suicide):"
         ).grid(row=5, column=0, sticky="w", padx=10, pady=4)
         self.xp_suicide_var = tk.StringVar(value="0")
-        ttk.Entry(xp_frame, textvariable=self.xp_suicide_var, width=10).grid(
-            row=5, column=1, sticky="w", padx=5, pady=4
+        ttk.Entry(
+            xp_frame,
+            textvariable=self.xp_suicide_var,
+            width=10,
+            validate="key",
+            validatecommand=vcmd_3digits,
+        ).grid(row=5, column=1, sticky="w", padx=5, pady=4)
+
+        # Native MW2 XP Reference Guide Label
+        native_xp_info = (
+            "💡 Native MW2 Defaults: Kill: 100 | Headshot: 50 | Assist: 20 | Death/Suicide: 0\n"
+            "⚠️ Note: Values above 999 or scr_xpscale > 4 cause game crashes on kill."
         )
+        ttk.Label(
+            xp_frame,
+            text=native_xp_info,
+            foreground="#888888",
+            justify="left",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=6)
 
     # --- TAB 3: GAMETYPES SETTINGS ---
     def setup_gametypes_tab(self):
@@ -1123,7 +1196,7 @@ class IW4xServerManager:
         self.log(f"[TAGS] Updated tags for {code}: [{tag_str}]")
 
     def build_map_rotation_string(self):
-        # Translate UI gametypes to MW2 internal engine codes
+        # Translation map for MW2 engine codes
         gt_engine_map = {
             "tdm": "war",  # TDM engine code is 'war'
             "hq": "koth",  # HQ engine code is 'koth'
@@ -1149,8 +1222,9 @@ class IW4xServerManager:
         if not selected_maps:
             selected_maps = ["mp_afghan"]
 
-        # Group maps cleanly by gametype
-        gt_map_dict = {}
+        rotation_pairs = []
+
+        # Pair each map with its allowed enabled gametypes
         for code in selected_maps:
             map_tag_str = self.map_tags.get(code, "").upper()
             allowed_tags = [
@@ -1165,26 +1239,29 @@ class IW4xServerManager:
                     or gt.upper() in allowed_tags
                     or engine_gt.upper() in allowed_tags
                 ):
-                    if engine_gt not in gt_map_dict:
-                        gt_map_dict[engine_gt] = []
-                    if code not in gt_map_dict[engine_gt]:
-                        gt_map_dict[engine_gt].append(code)
+                    rotation_pairs.append((engine_gt, code))
 
-        # Fallback if no map-tag matches were found
-        if not gt_map_dict:
-            first_gt = gt_engine_map.get(enabled_gt[0], enabled_gt[0])
-            gt_map_dict[first_gt] = selected_maps
+        # Fallback if map tag filtering yielded no pairs
+        if not rotation_pairs:
+            for code in selected_maps:
+                for gt in enabled_gt:
+                    engine_gt = gt_engine_map.get(gt, gt)
+                    rotation_pairs.append((engine_gt, code))
 
-        # Build clean string: gametype war map mp_afghan map mp_rust gametype dm map mp_terminal
+        # Full Randomization: Shuffle the gametype/map pairs directly
+        if self.randomize_rotation_var.get():
+            random.shuffle(rotation_pairs)
+
+        # Build clean execution string
         parts = []
-        for engine_gt, maps_list in gt_map_dict.items():
-            if maps_list:
+        current_gt = None
+        for engine_gt, map_code in rotation_pairs:
+            if engine_gt != current_gt:
                 parts.append(f"gametype {engine_gt}")
-                for m in maps_list:
-                    parts.append(f"map {m}")
+                current_gt = engine_gt
+            parts.append(f"map {map_code}")
 
-        rotation_str = " ".join(parts)
-        return f'set sv_mapRotation "{rotation_str}"'
+        return f'set sv_mapRotation "{" ".join(parts)}"'
 
     def on_map_click(self, event):
         lb = event.widget
@@ -1579,34 +1656,34 @@ class IW4xServerManager:
 
         cfg = f"""// IW4x Configuration File
 
-	set sv_hostname "{self.hostname_var.get()}"
-	set sv_motd "{self.motd_var.get()}"
-	set rcon_password "{self.rcon_var.get()}"
-	set g_password ""
-	set sv_maxclients "{self.maxplayers_var.get()}"
-	set party_maxplayers "{self.maxplayers_var.get()}"
+    set sv_hostname "{self.hostname_var.get()}"
+    set sv_motd "{self.motd_var.get()}"
+    set rcon_password "{self.rcon_var.get()}"
+    set g_password ""
+    set sv_maxclients "{self.maxplayers_var.get()}"
+    set party_maxplayers "{self.maxplayers_var.get()}"
 
-	set g_inactivity "{self.inactivity_var.get()}"
-	set g_inactivitySpectator "{self.spec_inactivity_var.get()}"
+    set g_inactivity "{self.inactivity_var.get()}"
+    set g_inactivitySpectator "{self.spec_inactivity_var.get()}"
 
-	set g_hardcore "{b(self.hc_var)}"
-	set scr_hardcore "{b(self.hc_var)}"
-	set scr_team_fftype "{split0(self.ff_var)}"
-	set scr_game_spectatetype "{split0(self.spectate_var)}"
-	set sv_allowAimAssist "{b(self.aim_assist_var)}"
+    set g_hardcore "{b(self.hc_var)}"
+    set scr_hardcore "{b(self.hc_var)}"
+    set scr_team_fftype "{split0(self.ff_var)}"
+    set scr_game_spectatetype "{split0(self.spectate_var)}"
+    set sv_allowAimAssist "{b(self.aim_assist_var)}"
 
-	// XP & SCORE CONFIGURATION
-	set scr_xpscale "{self.xpscale_var.get()}"
-	set scr_war_score_kill "{self.xp_kill_var.get()}"
-	set scr_war_score_headshot "{self.xp_headshot_var.get()}"
-	set scr_war_score_assist "{self.xp_assist_var.get()}"
-	set scr_war_score_death "{self.xp_death_var.get()}"
-	set scr_war_score_suicide "{self.xp_suicide_var.get()}"
+    // XP & SCORE CONFIGURATION
+    set scr_xpscale "{self.xpscale_var.get()}"
+    set scr_war_score_kill "{self.xp_kill_var.get()}"
+    set scr_war_score_headshot "{self.xp_headshot_var.get()}"
+    set scr_war_score_assist "{self.xp_assist_var.get()}"
+    set scr_war_score_death "{self.xp_death_var.get()}"
+    set scr_war_score_suicide "{self.xp_suicide_var.get()}"
 
-	set scr_game_allowkillcam "{b(self.killcam_var)}"
-	set scr_teambalance "{b(self.teambalance_var)}"
+    set scr_game_allowkillcam "{b(self.killcam_var)}"
+    set scr_teambalance "{b(self.teambalance_var)}"
 
-	"""
+    """
 
         # Translation map for MW2 engine gametypes
         gt_engine_map = {
@@ -1639,7 +1716,7 @@ class IW4xServerManager:
         # Extended BotWarfare configuration
         cfg += "// BOTWARFARE CONFIGURATION\n"
 
-	# Tell IW4x to load the BotWarfare mod folder if bots are enabled
+    # Tell IW4x to load the BotWarfare mod folder if bots are enabled
         if self.bot_enable_var.get():
             cfg += 'set fs_game "mods/bots"\n'
         else:
