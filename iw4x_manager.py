@@ -180,6 +180,9 @@ class IW4xServerManager:
                 if code.lower() in self.found_maps:
                     lb_base.select_set(idx)
 
+        # Calculate counter AFTER everything is loaded from saved state
+        self.update_rotation_count()
+
     # --- TAB 1: GENERAL & ADMIN ---
     def setup_general_tab(self):
         f = self.tab_general
@@ -456,8 +459,13 @@ class IW4xServerManager:
                         parsed_gts.add(tokens[i + 1].lower())
 
                 if parsed_gts:
-                    for code, var in self.gt_vars.items():
-                        var.set(code.lower() in parsed_gts)
+                    unique_gts = set(gt.lower() for gt in parsed_gts)
+                    if len(unique_gts) == 1:
+                        # Single gametype forced across rotation
+                        self.gametype_mode_var.set(list(unique_gts)[0])
+                    else:
+                        # Multiple gametypes found -> use Custom Mode (Map Tags)
+                        self.gametype_mode_var.set("CUSTOM")
 
                 if parsed_maps:
                     for category, (lb, maps) in self.map_listboxes.items():
@@ -674,23 +682,37 @@ class IW4xServerManager:
         info_frame.pack(fill="x", padx=10, pady=5)
 
         note_msg = (
-            "Gametypes are visually separated by mode behavior. "
-            "When mixing round-based and continuous modes in map rotation, ensure "
-            "round limits and win limits are properly defined to prevent premature match endings."
+            "💡 How Gametype Selection Works:\n"
+            "• 'Custom Mode (Use Map Tags)': Runs every map with the gametypes tagged on that map in Map Rotation.\n"
+            "• Specific Gametype (e.g. TDM): OVERRIDES all map tags and forces ALL selected maps to run only this gametype."
         )
         ttk.Label(
             info_frame, text=note_msg, wraplength=720, justify="left"
         ).pack(padx=8, pady=4)
 
-        # Container for checkboxes
+        # Container for radio buttons
         gt_container = ttk.Frame(info_frame)
         gt_container.pack(fill="x", padx=5, pady=5)
 
-        self.gt_vars = {}
+        # Single selection variable for Radio Buttons
+        self.gametype_mode_var = tk.StringVar(value="CUSTOM")
+
+        # Custom Mode Radio Option (Uses Map Tags)
+        custom_rb = ttk.Radiobutton(
+            gt_container,
+            text="⚙️ Custom Mode (Use Map Tags specified in Map Rotation)",
+            value="CUSTOM",
+            variable=self.gametype_mode_var,
+        )
+        custom_rb.pack(anchor="w", padx=10, pady=(2, 6))
+
+        # Sub-container for the 2 mode columns
+        cols_frame = ttk.Frame(gt_container)
+        cols_frame.pack(fill="x", expand=True)
 
         # Respawn Modes Frame (Blue accent label)
         f_respawn = tk.LabelFrame(
-            gt_container,
+            cols_frame,
             text=" Continuous / Respawn Modes ",
             fg="#1f6aa5",
             font=("Helvetica", 9, "bold"),
@@ -698,16 +720,17 @@ class IW4xServerManager:
         f_respawn.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
         for code, name in self.respawn_modes:
-            var = tk.BooleanVar(value=(code == "war"))
-            cb = ttk.Checkbutton(
-                f_respawn, text=f"{name} ({code})", variable=var
+            rb = ttk.Radiobutton(
+                f_respawn,
+                text=f"{name} ({code})",
+                value=code,
+                variable=self.gametype_mode_var,
             )
-            cb.pack(anchor="w", padx=10, pady=2)
-            self.gt_vars[code] = var
+            rb.pack(anchor="w", padx=10, pady=2)
 
         # Round-Based Modes Frame (Red/Orange accent label)
         f_round = tk.LabelFrame(
-            gt_container,
+            cols_frame,
             text=" Round-Based / Objective Modes ",
             fg="#c0392b",
             font=("Helvetica", 9, "bold"),
@@ -715,10 +738,13 @@ class IW4xServerManager:
         f_round.pack(side="right", fill="both", expand=True, padx=5, pady=5)
 
         for code, name in self.round_modes:
-            var = tk.BooleanVar(value=False)
-            cb = ttk.Checkbutton(f_round, text=f"{name} ({code})", variable=var)
-            cb.pack(anchor="w", padx=10, pady=2)
-            self.gt_vars[code] = var
+            rb = ttk.Radiobutton(
+                f_round,
+                text=f"{name} ({code})",
+                value=code,
+                variable=self.gametype_mode_var,
+            )
+            rb.pack(anchor="w", padx=10, pady=2)
 
         # Rule editing frame
         rules_frame = ttk.LabelFrame(f, text="Configure Gametype Specific Rules")
@@ -789,6 +815,11 @@ class IW4xServerManager:
         ttk.Button(
             rules_frame, text="Apply Rule Changes", command=self.save_gt_rules
         ).grid(row=7, column=0, columnspan=2, pady=6)
+
+        self.gametype_mode_var = tk.StringVar(value="CUSTOM")
+        self.gametype_mode_var.trace_add(
+            "write", lambda *args: self.update_rotation_count()
+        )
 
         self.load_gt_rules()
 
@@ -916,15 +947,6 @@ class IW4xServerManager:
         )
         self.map_img_label.pack(expand=True, fill="both")
 
-        # Tip label explaining where to place map preview images
-        tk.Label(
-            right_frame,
-            text="💡 Place map images in './map_previews/'\n(e.g., preview_mp_afghan.png or mp_afghan.webp)",
-            font=("Helvetica", 7, "italic"),
-            fg="#555555",
-            justify="center",
-        ).pack(fill="x", padx=6, pady=(0, 4))
-
         # Title & Code
         self.map_title_label = tk.Label(
             right_frame,
@@ -945,6 +967,22 @@ class IW4xServerManager:
             bd=1,
         )
         self.map_desc_text.pack(fill="x", padx=6, pady=2)
+
+        # Map Tag & Rotation Notice Label
+        tag_notice_text = (
+            "💡 Map Tags & Gametype Behavior:\n"
+            "• Tags (e.g., TDM, DM) launch this map ONLY for those specific gametypes.\n"
+            "• 'sv_randomMapRotation 1' automatically shuffles all gametype+map pairs on the server."
+        )
+        self.map_tag_notice_label = tk.Label(
+            right_frame,
+            text=tag_notice_text,
+            font=("Helvetica", 7, "italic"),
+            fg="#555555",
+            justify="left",
+            anchor="w",
+        )
+        self.map_tag_notice_label.pack(fill="x", padx=6, pady=(4, 2))
 
         # Interactive Tag Checkboxes
         tag_frame = ttk.LabelFrame(right_frame, text=" Recommended Gametypes ")
@@ -968,7 +1006,7 @@ class IW4xServerManager:
             cb.grid(row=row, column=col, sticky="w", padx=6, pady=2)
             self.tag_cb_vars[tag] = var
             col += 1
-            if col > 1:
+            if col > 4:  # 5 columns per row
                 col = 0
                 row += 1
 
@@ -1195,11 +1233,13 @@ class IW4xServerManager:
         self.refresh_map_listboxes()
         self.log(f"[TAGS] Updated tags for {code}: [{tag_str}]")
 
+        self.save_map_tags()
+        self.update_rotation_count()  # Refresh counter instantly
+
     def build_map_rotation_string(self):
-        # Translation map for MW2 engine codes
         gt_engine_map = {
-            "tdm": "war",  # TDM engine code is 'war'
-            "hq": "koth",  # HQ engine code is 'koth'
+            "tdm": "war",
+            "hq": "koth",
             "dm": "dm",
             "dom": "dom",
             "sd": "sd",
@@ -1212,47 +1252,35 @@ class IW4xServerManager:
             "oneflag": "oneflag",
         }
 
-        enabled_gt = [
-            gt.lower() for gt, var in self.gt_vars.items() if var.get()
-        ]
-        if not enabled_gt:
-            enabled_gt = ["tdm"]
-
+        mode = self.gametype_mode_var.get().lower()
         selected_maps = self.get_selected_maps()
         if not selected_maps:
             selected_maps = ["mp_afghan"]
 
         rotation_pairs = []
 
-        # Pair each map with its allowed enabled gametypes
-        for code in selected_maps:
-            map_tag_str = self.map_tags.get(code, "").upper()
-            allowed_tags = [
-                t.strip() for t in map_tag_str.split(",") if t.strip()
-            ]
-
-            for gt in enabled_gt:
-                engine_gt = gt_engine_map.get(gt, gt)
-                if (
-                    not allowed_tags
-                    or "ALL" in allowed_tags
-                    or gt.upper() in allowed_tags
-                    or engine_gt.upper() in allowed_tags
-                ):
-                    rotation_pairs.append((engine_gt, code))
-
-        # Fallback if map tag filtering yielded no pairs
-        if not rotation_pairs:
+        if mode != "custom":
+            # OVERRIDE: Force chosen single gametype across all selected maps
+            engine_gt = gt_engine_map.get(mode, mode)
             for code in selected_maps:
-                for gt in enabled_gt:
-                    engine_gt = gt_engine_map.get(gt, gt)
-                    rotation_pairs.append((engine_gt, code))
+                rotation_pairs.append((engine_gt, code))
+        else:
+            # CUSTOM: Use map tags specified for each map
+            for code in selected_maps:
+                map_tag_str = self.map_tags.get(code, "").upper()
+                allowed_tags = [
+                    t.strip() for t in map_tag_str.split(",") if t.strip()
+                ]
 
-        # Full Randomization: Shuffle the gametype/map pairs directly
-        if self.randomize_rotation_var.get():
-            random.shuffle(rotation_pairs)
+                if not allowed_tags or "ALL" in allowed_tags:
+                    rotation_pairs.append(("war", code))  # Default fallback
+                else:
+                    for tag in allowed_tags:
+                        tag_gt = tag.lower()
+                        engine_gt = gt_engine_map.get(tag_gt, tag_gt)
+                        rotation_pairs.append((engine_gt, code))
 
-        # Build clean execution string
+        # Build clean string (engine handles randomization via sv_randomMapRotation)
         parts = []
         current_gt = None
         for engine_gt, map_code in rotation_pairs:
@@ -1610,43 +1638,67 @@ class IW4xServerManager:
 
     # --- BOTTOM PERSISTENT PANEL ---
     def setup_bottom_panel(self):
+        # Bottom Control Bar Frame
         bottom_frame = ttk.Frame(self.root)
-        bottom_frame.pack(fill="x", side="bottom", padx=10, pady=5)
+        bottom_frame.pack(side="bottom", fill="x", padx=10, pady=8)
 
-        self.log_text = tk.Text(bottom_frame, height=4, width=80)
-        self.log_text.pack(fill="x", padx=5, pady=2)
+        # 1. Counter Label — Docks to the FAR LEFT
+        self.rotation_count_label = ttk.Label(
+            bottom_frame,
+            text="📊 Rotation Total: 0 map entries",
+            font=("Helvetica", 9, "bold"),
+            foreground="#1f6aa5",
+        )
+        self.rotation_count_label.pack(side="left", padx=10, pady=2)
 
-        btn_container = ttk.Frame(bottom_frame)
-        btn_container.pack(fill="x", pady=4)
-
+        # 2. Action Buttons — Docked to the RIGHT (Packed in reverse order)      
+        # Far Right Position: Save Config
         ttk.Button(
-            btn_container,
-            text="Save server.cfg",
+            bottom_frame,
+            text="💾 Save Config",
             command=self.save_config,
-            width=18,
-        ).pack(side="left", padx=5)
+        ).pack(side="right", padx=5)
 
+        # Middle Right Position: Run Linux
         ttk.Button(
-            btn_container,
-            text="Run (Linux)",
+            bottom_frame,
+            text="🐧 Run (Linux)",
             command=self.launch_server_linux,
             width=18,
         ).pack(side="right", padx=5)
 
+        # Inner Right Position: Run Windows
         ttk.Button(
-            btn_container,
-            text="Run (Windows)",
+            bottom_frame,
+            text="🪟 Run (Windows)",
             command=self.launch_server_windows,
             width=18,
         ).pack(side="right", padx=5)
+
+        # Initial calculation on startup
+        self.update_rotation_count()
 
         self.log(
             "Ready. Select 'Run (Linux)' or 'Run (Windows)' depending on your OS."
         )
 
+    def update_rotation_count(self):
+        """Calculates and updates total map+gametype entries in rotation."""
+        rot_str = self.build_map_rotation_string()
+        # Each 'map ' keyword represents 1 map entry in the server rotation
+        total_entries = rot_str.count("map ")
+
+        if hasattr(self, "rotation_count_label"):
+            self.rotation_count_label.config(
+                text=f"📊 Rotation Total: {total_entries} map entries"
+            )
+
     def log(self, message):
-        self.log_text.insert(tk.END, message + "\n")
-        self.log_text.see(tk.END)
+        if hasattr(self, "log_text") and self.log_text:
+            self.log_text.insert(tk.END, message + "\n")
+            self.log_text.see(tk.END)
+        else:
+            print(f"[LOG] {message}")  # Fallback print if log_text isn't built yet
 
     # --- CONFIG GENERATION LOGIC ---
     def generate_cfg(self):
@@ -1745,23 +1797,24 @@ class IW4xServerManager:
         cfg += f'set bots_loadout_rank "{self.bot_rank_var.get()}"\n'
         cfg += f'set bots_loadout_prestige "{self.bot_prestige_var.get()}"\n\n'
 
-        # Set default startup gametype
-        active_gts = [
-            gt.lower() for gt, var in self.gt_vars.items() if var.get()
-        ]
-        default_gt = active_gts[0] if active_gts else "tdm"
-        engine_default_gt = gt_engine_map.get(default_gt, default_gt)
+        # Set default startup gametype based on RadioButton selection
+        mode = self.gametype_mode_var.get().lower()
+
+        if mode == "custom":
+            # In Custom mode (using map tags), default startup gametype is TDM ('war')
+            engine_default_gt = "war"
+        else:
+            engine_default_gt = gt_engine_map.get(mode, mode)
 
         cfg += 'set party_enable "0"\n'
         cfg += f'set g_gametype "{engine_default_gt}"\n\n'
 
-        # Native IW4x Randomizer DVar (1 = Random rotation, 0 = Sequential)
+        # Native IW4x Map Randomizer DVar (1 = Randomize rotation, 0 = Sequential)
         rand_flag = "1" if self.randomize_rotation_var.get() else "0"
         cfg += f'set sv_randomMapRotation "{rand_flag}"\n'
 
-        # Map rotation
-        map_rotation_line = self.build_map_rotation_string()
-        cfg += f"{map_rotation_line}\n"
+        # Map Rotation String
+        cfg += f"{self.build_map_rotation_string()}\n"
 
         return cfg
 
@@ -1955,7 +2008,7 @@ class IW4xServerManager:
             "teambalance": self.teambalance_var.get(),
             "aim_assist": self.aim_assist_var.get(),
             "auto_scan": self.auto_scan_var.get(),
-            "gametypes": {code: var.get() for code, var in self.gt_vars.items()},
+            "gametype_mode": self.gametype_mode_var.get(),
             "gt_rules": self.gt_rules_data,
             "selected_maps": self.get_selected_maps(),
             "randomize_rotation": self.randomize_rotation_var.get(),
@@ -2014,11 +2067,12 @@ class IW4xServerManager:
             self.aim_assist_var.set(state.get("aim_assist", self.aim_assist_var.get()))
             self.auto_scan_var.set(state.get("auto_scan", self.auto_scan_var.get()))
 
-            # Restore Gametypes
-            gt_saved = state.get("gametypes", {})
-            for code, var in self.gt_vars.items():
-                if code in gt_saved:
-                    var.set(gt_saved[code])
+            # Restore Gametype Mode
+            if "gametype_mode" in state:
+                self.gametype_mode_var.set(state["gametype_mode"])
+            elif "gametypes" in state:
+                # Legacy fallback for older save files
+                self.gametype_mode_var.set("CUSTOM")
 
             if "gt_rules" in state:
                 self.gt_rules_data.update(state["gt_rules"])
