@@ -1378,15 +1378,41 @@ class IW4xServerManager:
         lb.selection_clear(0, tk.END)
 
     def load_default_map_image(self):
-        """Loads mw2.png from root folder as default preview when no map is selected."""
-        img_path = "mw2.png"
+        """Loads and resizes mw2.png from root folder as default preview when no map is selected."""
+        import os
+
+        # Check APP_DIR or fallback to current directory
+        img_path = os.path.join(APP_DIR, "mw2.png")
+        if not os.path.exists(img_path):
+            img_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "mw2.png"
+            )
+
         if os.path.exists(img_path):
             try:
-                self.default_map_photo = tk.PhotoImage(file=img_path)
+                # 1. Try PIL (Pillow) - Supports all PNG formats and resizes cleanly
+                from PIL import Image, ImageTk
+
+                pil_img = Image.open(img_path)
+                pil_img = pil_img.resize((240, 125), Image.Resampling.LANCZOS)
+                self.default_map_photo = ImageTk.PhotoImage(pil_img)
                 self.map_img_label.config(
-                    image=self.default_map_photo, text=""
+                    image=self.default_map_photo, text="", bg="#f8f9fa"
                 )
-            except Exception:
+            except ImportError:
+                # 2. Fallback to basic Tkinter PhotoImage if Pillow isn't installed
+                try:
+                    self.default_map_photo = tk.PhotoImage(file=img_path)
+                    self.map_img_label.config(
+                        image=self.default_map_photo, text=""
+                    )
+                except Exception as e:
+                    if hasattr(self, "log"):
+                        self.log(f"[WARN] Failed to load mw2.png: {e}")
+                    self.map_img_label.config(image="", text="Call of Duty: MW2")
+            except Exception as e:
+                if hasattr(self, "log"):
+                    self.log(f"[WARN] Failed to load mw2.png with PIL: {e}")
                 self.map_img_label.config(image="", text="Call of Duty: MW2")
         else:
             self.map_img_label.config(image="", text="Call of Duty: MW2")
