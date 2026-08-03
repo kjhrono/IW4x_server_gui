@@ -851,32 +851,58 @@ class IW4xServerManager:
         }
         self.log(f"[CONFIG] Applied rules for gametype '{gt}'")
 
-    # --- TAB 4: MAP ROTATION (REDESIGNED LAYOUT) ---
+    # --- TAB 4: MAP ROTATION (DUAL-LISTBOX SHUTTLE LAYOUT) ---
     def setup_maps_tab(self):
         f = self.tab_maps
 
-        # 1. LEGENDA (Top)
+        # Initialize active rotation list if not present
+        if not hasattr(self, "active_rotation"):
+            self.active_rotation = ["mp_afghan", "mp_terminal", "mp_highrise"]
+
+        # Community Map Recommendations Database
+        self.community_recommendations = {
+            "mp_afghan": "TDM, DOM, SD, CTF — Open sightlines, excellent for long-range and hilltop control.",
+            "mp_derail": "TDM, DOM, SD — Large map, great for snipers and tactical objective play.",
+            "mp_estate": "TDM, DOM, HQ — Cabin control creates intense firefights.",
+            "mp_favela": "TDM, DM, DOM, DD — Multi-level roofs, fast-paced close quarters.",
+            "mp_highrise": "TDM, DOM, SD, CTF, SAB — Fan favorite, balanced for all objective modes.",
+            "mp_invasion": "TDM, DOM, SD, HQ — Street fights and building-to-building combat.",
+            "mp_checkpoint": "TDM, DOM, SD — Compact urban layout with tight sightlines.",
+            "mp_quarry": "TDM, DOM, HQ — Verticality with cranes and catwalks.",
+            "mp_rundown": "TDM, DOM, SD — River bridges force choke points.",
+            "mp_rust": "DM, GUN, TDM — Ultra compact, chaos mode, best for 1v1 / FFA.",
+            "mp_boneyard": "TDM, DOM, SAB — Plane hulls provide rich cover.",
+            "mp_nightshift": "TDM, DOM, SD — Hallway choke points and office engagements.",
+            "mp_subbase": "TDM, DOM, SD, CTF — Snow map with strong indoor/outdoor balance.",
+            "mp_terminal": "TDM, DOM, SD, DD, CTF, GUN — Classic map, excellent for ALL modes.",
+            "mp_underpass": "TDM, DOM, HQ — Rain storm map with dark visibility and sniper lanes.",
+            "mp_brecourt": "TDM, DOM, SD — Massive open field with center bunker choke point.",
+            "mp_crash": "TDM, DOM, SD, SAB — Legendary CoD4 map, balanced for competitive play.",
+            "mp_overgrown": "TDM, DOM, SD — Open farm fields and riverbeds.",
+            "mp_nuked": "DM, TDM, DOM, GUN — Ultra fast action, small footprint.",
+            "mp_dome": "TDM, DOM, DM, GUN — Fast-paced dome engagements.",
+        }
+
+        # 1. LEGEND BAR (Top)
         legend_frame = tk.LabelFrame(
             f,
-            text=" Map Rotation Legend ",
+            text=" Map Rotation Legend & Status ",
             font=("Helvetica", 9, "bold"),
             bd=1,
             relief="solid",
-            bg="#f8f9fa",
             fg="#212529",
             padx=8,
-            pady=4,
+            pady=3,
         )
         legend_frame.pack(fill="x", padx=5, pady=(5, 3))
 
-        status_frame = tk.Frame(legend_frame, bg="#f8f9fa")
+        status_frame = tk.Frame(legend_frame)
         status_frame.pack(fill="x", padx=2, pady=(0, 2))
 
         tk.Label(
             status_frame,
             text="Map Status:",
             font=("Helvetica", 8, "bold"),
-            bg="#f8f9fa",
             fg="#212529",
         ).pack(side="left", padx=(0, 5))
 
@@ -884,7 +910,6 @@ class IW4xServerManager:
             status_frame,
             text="■ Green: Installed / Found",
             fg="#2e7d32",
-            bg="#f8f9fa",
             font=("Helvetica", 8, "bold"),
         ).pack(side="left", padx=8)
 
@@ -892,124 +917,39 @@ class IW4xServerManager:
             status_frame,
             text="■ Red: Missing / Uninstalled",
             fg="#c62828",
-            bg="#f8f9fa",
             font=("Helvetica", 8, "bold"),
         ).pack(side="left", padx=8)
 
-        acronym_text = (
-            "Gametypes: TDM (Team Deathmatch) | DM (Free For All) | DOM (Domination) | SD (Search & Destroy) | HQ (Headquarters)\n"
-            "CTF (Capture The Flag) | SAB (Sabotage) | DD (Demolition) | GUN (Gun Game) | GTNW (Global Thermo-Nuclear War)"
-        )
-        tk.Label(
-            legend_frame,
-            text=acronym_text,
-            font=("Helvetica", 8),
-            bg="#f8f9fa",
-            fg="#333333",
-            justify="center",
-        ).pack(fill="x", padx=2, pady=(1, 0))
-
-        # 2. MAIN SPLIT CONTENT AREA
+        # 2. MAIN THREE-COLUMN CONTAINER (Available | Transfer Controls | Active Rotation & Details)
         main_split = ttk.Frame(f)
         main_split.pack(expand=True, fill="both", padx=5, pady=3)
 
-        # LEFT SIDE (60%): DLC Map Notebook
-        left_frame = ttk.Frame(main_split)
-        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 3))
+        # -----------------------------------------------------------
+        # LEFT COLUMN: Available Maps Notebook
+        # -----------------------------------------------------------
+        left_container = ttk.LabelFrame(main_split, text=" Available Maps ")
+        left_container.pack(side="left", fill="both", expand=True, padx=(0, 3))
 
-        self.map_notebook = ttk.Notebook(left_frame)
-        self.map_notebook.pack(expand=True, fill="both")
+        self.map_notebook = ttk.Notebook(left_container)
+        self.map_notebook.pack(expand=True, fill="both", padx=3, pady=3)
 
-        # RIGHT SIDE (40%): Map Details, Preview & Interactive Tags Panel
-        right_frame = ttk.LabelFrame(main_split, text=" Selected Map Details ")
-        right_frame.pack(
-            side="right", fill="both", padx=(3, 0), ipadx=5, ipady=5
-        )
+        # Tab Selection Controls (Select All / Deselect All for Active Tab)
+        tab_ctrl_frame = ttk.Frame(left_container)
+        tab_ctrl_frame.pack(fill="x", padx=3, pady=(0, 3))
 
-        # Container frame with locked dimensions (prevents Tkinter 9-pixel collapse bug)
-        preview_container = tk.Frame(
-            right_frame,
-            width=260,
-            height=145,
-            bg="#d0d0d0",
-            relief="sunken",
-            bd=1,
-        )
-        preview_container.pack_propagate(False)  # Prevents shrinking
-        preview_container.pack(fill="none", padx=6, pady=(5, 2))
+        ttk.Button(
+            tab_ctrl_frame,
+            text="✅ Select All (Tab)",
+            command=self.select_all_current_tab,
+        ).pack(side="left", expand=True, fill="x", padx=2)
 
-        # Map Preview Image Label
-        self.map_img_label = tk.Label(
-            preview_container,
-            text="Select a map to preview",
-            bg="#d0d0d0",
-            fg="#444444",
-        )
-        self.map_img_label.pack(expand=True, fill="both")
+        ttk.Button(
+            tab_ctrl_frame,
+            text="❌ Deselect All (Tab)",
+            command=self.deselect_all_current_tab,
+        ).pack(side="right", expand=True, fill="x", padx=2)
 
-        # Title & Code
-        self.map_title_label = tk.Label(
-            right_frame,
-            text="Afghan (mp_afghan)",
-            font=("Helvetica", 10, "bold"),
-            anchor="w",
-        )
-        self.map_title_label.pack(fill="x", padx=6, pady=(4, 2))
-
-        # Description
-        self.map_desc_text = tk.Text(
-            right_frame,
-            height=3,
-            wrap="word",
-            font=("Helvetica", 8),
-            bg="#f4f4f4",
-            relief="solid",
-            bd=1,
-        )
-        self.map_desc_text.pack(fill="x", padx=6, pady=2)
-
-        # Map Tag & Rotation Notice Label
-        tag_notice_text = (
-            "💡 Map Tags & Gametype Behavior:\n"
-            "• Tags (e.g., TDM, DM) launch this map ONLY for those specific gametypes.\n"
-            "• 'sv_randomMapRotation 1' automatically shuffles all gametype+map pairs on the server."
-        )
-        self.map_tag_notice_label = tk.Label(
-            right_frame,
-            text=tag_notice_text,
-            font=("Helvetica", 7, "italic"),
-            fg="#555555",
-            justify="left",
-            anchor="w",
-        )
-        self.map_tag_notice_label.pack(fill="x", padx=6, pady=(4, 2))
-
-        # Interactive Tag Checkboxes
-        tag_frame = ttk.LabelFrame(right_frame, text=" Recommended Gametypes ")
-        tag_frame.pack(fill="both", expand=True, padx=6, pady=6)
-
-        self.tag_options = ["TDM", "DM", "DOM", "SD", "HQ", "CTF", "SAB", "DD", "GUN", "GTNW"]
-        self.tag_cb_vars = {}
-
-        tag_grid = ttk.Frame(tag_frame)
-        tag_grid.pack(fill="both", expand=True, padx=4, pady=4)
-
-        col, row = 0, 0
-        for tag in self.tag_options:
-            var = tk.BooleanVar(value=False)
-            cb = ttk.Checkbutton(
-                tag_grid,
-                text=tag,
-                variable=var,
-                command=self.on_tag_checkbox_toggled,
-            )
-            cb.grid(row=row, column=col, sticky="w", padx=6, pady=2)
-            self.tag_cb_vars[tag] = var
-            col += 1
-            if col > 4:  # 5 columns per row
-                col = 0
-                row += 1
-
+        # Populate Map Categories
         self.dlc_maps = {
             "Base MW2": [
                 ("mp_afghan", "Afghan"),
@@ -1093,75 +1033,260 @@ class IW4xServerManager:
             lb = tk.Listbox(
                 sub_frame,
                 selectmode=tk.MULTIPLE,
-                height=12,
+                height=10,
                 exportselection=False,
             )
             lb.pack(fill="both", expand=True, padx=3, pady=3)
-
-            # Bind mouse click release directly to calculate exact row clicked
             lb.bind("<ButtonRelease-1>", self.on_map_click)
 
             self.map_listboxes[category_name] = (lb, maps)
 
-        self.refresh_map_listboxes()
-
-        # 3. CONTROL BAR (Positioned below the map view)
-        top_bar = ttk.Frame(f)
-        top_bar.pack(fill="x", padx=5, pady=(2, 5))
+        # -----------------------------------------------------------
+        # MIDDLE COLUMN: Shuttle Transfer Buttons
+        # -----------------------------------------------------------
+        transfer_frame = ttk.Frame(main_split)
+        transfer_frame.pack(side="left", fill="y", padx=4, pady=20)
 
         ttk.Button(
-            top_bar,
-            text="Save Preset",
+            transfer_frame,
+            text=" Add ➡️",
+            command=self.add_selected_to_rotation,
+            width=12,
+        ).pack(pady=4)
+
+        ttk.Button(
+            transfer_frame,
+            text=" Add All ⏩",
+            command=self.add_all_current_tab_to_rotation,
+            width=12,
+        ).pack(pady=4)
+
+        ttk.Button(
+            transfer_frame,
+            text="⬅️ Remove",
+            command=self.remove_selected_from_rotation,
+            width=12,
+        ).pack(pady=4)
+
+        ttk.Button(
+            transfer_frame,
+            text="🗑️ Clear All",
+            command=self.clear_rotation,
+            width=12,
+        ).pack(pady=4)
+
+        ttk.Separator(transfer_frame, orient="horizontal").pack(
+            fill="x", pady=6
+        )
+
+        ttk.Label(
+            transfer_frame, text="Presets & Tools", font=("Helvetica", 8, "bold")
+        ).pack(pady=(2, 2))
+
+        ttk.Button(
+            transfer_frame,
+            text="💾 Save Preset",
             command=self.save_rotation_preset,
             width=14,
-        ).pack(side="left", padx=4)
+        ).pack(pady=2)
 
         ttk.Button(
-            top_bar,
-            text="Load Preset",
+            transfer_frame,
+            text="📥 Load Preset",
             command=self.load_rotation_preset,
             width=14,
-        ).pack(side="left", padx=4)
+        ).pack(pady=2)
 
         ttk.Button(
-            top_bar,
-            text="Scan Directory",
+            transfer_frame,
+            text="🔍 Scan Directory",
             command=self.scan_installed_maps,
-            width=16,
-        ).pack(side="left", padx=4)
+            width=14,
+        ).pack(pady=2)
 
-        # Randomize Checkbox
+        ttk.Button(
+            transfer_frame,
+            text="🔄 Reset Tags",
+            command=self.reset_community_tags,
+            width=14,
+        ).pack(pady=2)
+
+        ttk.Separator(transfer_frame, orient="horizontal").pack(
+            fill="x", pady=6
+        )
+
         ttk.Checkbutton(
-            top_bar,
-            text="🎲 Shuffle / Randomize Rotation Order",
+            transfer_frame,
+            text="🎲 Shuffle Order",
             variable=self.randomize_rotation_var,
-        ).pack(side="left", padx=12)
-            
-    def load_map_tags(self):
-        tags = dict(self.default_tags)
-        tag_file = os.path.join(APP_DIR, "map_tags.json")
-        if os.path.exists(tag_file):
-            try:
-                with open(tag_file, "r") as f:
-                    user_tags = json.load(f)
-                    tags.update(user_tags)
-            except Exception:
-                pass
-        return tags
+        ).pack(pady=2)
 
-    def save_map_tags(self):
-        tag_file = os.path.join(APP_DIR, "map_tags.json")
-        try:
-            with open(tag_file, "w") as f:
-                json.dump(self.map_tags, f, indent=4)
-        except Exception as e:
-            self.log(f"[WARN] Failed to save custom map tags: {e}")
+        # -----------------------------------------------------------
+        # RIGHT COLUMN: Active Server Rotation & Selected Map Details
+        # -----------------------------------------------------------
+        right_split = ttk.Frame(main_split)
+        right_split.pack(
+            side="right", fill="both", expand=True, padx=(3, 0)
+        )
+
+        # Top Right: Active Rotation Listbox
+        rotation_frame = ttk.LabelFrame(
+            right_split, text=" Active Server Rotation "
+        )
+        rotation_frame.pack(fill="both", expand=True, pady=(0, 4))
+
+        rot_list_container = ttk.Frame(rotation_frame)
+        rot_list_container.pack(fill="both", expand=True, padx=4, pady=4)
+
+        self.rotation_listbox = tk.Listbox(
+            rot_list_container, height=6, exportselection=False
+        )
+        self.rotation_listbox.pack(
+            side="left", fill="both", expand=True
+        )
+        self.rotation_listbox.bind(
+            "<<ListboxSelect>>", self.on_rotation_item_selected
+        )
+
+        rot_scroll = ttk.Scrollbar(
+            rot_list_container,
+            orient="vertical",
+            command=self.rotation_listbox.yview,
+        )
+        rot_scroll.pack(side="right", fill="y")
+        self.rotation_listbox.config(yscrollcommand=rot_scroll.set)
+
+        rot_order_frame = ttk.Frame(rotation_frame)
+        rot_order_frame.pack(fill="x", padx=4, pady=(0, 4))
+
+        ttk.Button(
+            rot_order_frame,
+            text="🔼 Move Up",
+            command=lambda: self.move_rotation_item(-1),
+        ).pack(side="left", expand=True, fill="x", padx=2)
+
+        ttk.Button(
+            rot_order_frame,
+            text="🔽 Move Down",
+            command=lambda: self.move_rotation_item(1),
+        ).pack(side="right", expand=True, fill="x", padx=2)
+
+        # Bottom Right: Map Details Panel
+        details_frame = ttk.LabelFrame(
+            right_split, text=" Selected Map Details "
+        )
+        details_frame.pack(fill="both", expand=True, pady=(4, 0))
+
+        # Locked Preview Container
+        preview_container = tk.Frame(
+            details_frame,
+            width=240,
+            height=125,
+            bg="#d0d0d0",
+            relief="sunken",
+            bd=1,
+        )
+        preview_container.pack_propagate(False)
+        preview_container.pack(anchor="center", padx=6, pady=(4, 2))
+
+        self.map_img_label = tk.Label(
+            preview_container,
+            text="Select a map to preview",
+            bg="#d0d0d0",
+            fg="#444444",
+        )
+        self.map_img_label.pack(expand=True, fill="both")
+
+        self.map_title_label = tk.Label(
+            details_frame,
+            text="Afghan (mp_afghan)",
+            font=("Helvetica", 9, "bold"),
+            anchor="w",
+        )
+        self.map_title_label.pack(fill="x", padx=6, pady=(2, 1))
+
+        # LOCKED HEIGHT: Map Description (3 Rows Fixed)
+        self.map_desc_text = tk.Text(
+            details_frame,
+            height=3,
+            wrap="word",
+            font=("Helvetica", 8),
+            bg="#f4f4f4",
+            relief="solid",
+            bd=1,
+        )
+        self.map_desc_text.pack(fill="x", padx=6, pady=2)
+
+        # LOCKED HEIGHT: Community Recommendations (2 Rows Fixed via disabled Text widget)
+        community_frame = ttk.LabelFrame(
+            details_frame, text=" 💡 Community Recommended Gametypes "
+        )
+        community_frame.pack(fill="x", padx=6, pady=2)
+
+        self.community_rec_text = tk.Text(
+            community_frame,
+            height=2,
+            wrap="word",
+            font=("Helvetica", 8, "italic"),
+            bg="#f0f4f8",
+            fg="#1f6aa5",
+            relief="flat",
+            bd=0,
+        )
+        self.community_rec_text.pack(fill="x", padx=6, pady=3)
+
+        # Interactive Tag Checkboxes
+        tag_frame = ttk.LabelFrame(
+            details_frame, text=" Active Gametype Tags for Map "
+        )
+        tag_frame.pack(fill="x", padx=6, pady=4)
+
+        self.tag_options = [
+            "TDM",
+            "DM",
+            "DOM",
+            "SD",
+            "HQ",
+            "CTF",
+            "SAB",
+            "DD",
+            "GUN",
+            "GTNW",
+        ]
+        self.tag_cb_vars = {}
+
+        tag_grid = ttk.Frame(tag_frame)
+        tag_grid.pack(fill="x", padx=4, pady=2)
+
+        col, row = 0, 0
+        for tag in self.tag_options:
+            var = tk.BooleanVar(value=False)
+            cb = ttk.Checkbutton(
+                tag_grid,
+                text=tag,
+                variable=var,
+                command=self.on_tag_checkbox_toggled,
+            )
+            cb.grid(row=row, column=col, sticky="w", padx=4, pady=1)
+            self.tag_cb_vars[tag] = var
+            col += 1
+            if col > 3:
+                col = 0
+                row += 1
+
+        # Initial Refresh
+        self.refresh_map_listboxes()
+        self.refresh_rotation_listbox()
+        self.load_default_map_image()
+
+    # --- HELPER & SHUTTLE CONTROL METHODS ---
 
     def update_map_details_panel(self, code, name):
+        """Updates preview image, title, description, community tips, and tag checkbuttons safely without UI resizing."""
         self.current_selected_map = (code, name)
         self.map_title_label.config(text=f"{name} ({code})")
 
-        # Description
+        # Description (Fixed 3 rows)
         desc = self.map_descriptions.get(
             code,
             "Standard multiplayer map. Suitable for team objectives and classic elimination modes.",
@@ -1169,7 +1294,17 @@ class IW4xServerManager:
         self.map_desc_text.delete("1.0", tk.END)
         self.map_desc_text.insert(tk.END, desc)
 
-        # Image Preview (.png, .jpg, .webp with/without preview_ prefix)
+        # Community Advice (Fixed 2 rows text)
+        rec_text = self.community_recommendations.get(
+            code,
+            "TDM, DOM, SD — Balanced for general gameplay.",
+        )
+        self.community_rec_text.config(state="normal")
+        self.community_rec_text.delete("1.0", tk.END)
+        self.community_rec_text.insert(tk.END, rec_text)
+        self.community_rec_text.config(state="disabled")
+
+        # Image Preview
         img_found = False
         for prefix in ["preview_", ""]:
             for ext in [".png", ".jpg", ".jpeg", ".webp"]:
@@ -1178,13 +1313,12 @@ class IW4xServerManager:
 
                 if os.path.exists(img_path):
                     try:
-                        # PIL (Pillow) image scaling to fit 255x140
                         try:
                             from PIL import Image, ImageTk
 
                             pil_img = Image.open(img_path)
                             pil_img = pil_img.resize(
-                                (255, 140), Image.Resampling.LANCZOS
+                                (240, 125), Image.Resampling.LANCZOS
                             )
                             self.current_img = ImageTk.PhotoImage(pil_img)
                             self.map_img_label.config(
@@ -1193,11 +1327,12 @@ class IW4xServerManager:
                             img_found = True
                             break
                         except ImportError:
-                            # Standard Tkinter fallback (PNG only)
                             if ext == ".png":
                                 self.current_img = tk.PhotoImage(file=img_path)
                                 self.map_img_label.config(
-                                    image=self.current_img, text="", bg="#f8f9fa"
+                                    image=self.current_img,
+                                    text="",
+                                    bg="#f8f9fa",
                                 )
                                 img_found = True
                                 break
@@ -1214,14 +1349,52 @@ class IW4xServerManager:
                 fg="#555555",
             )
 
-        # Update Checkboxes based on current map tags
+        # Active Checkboxes
         active_tags = [
-            t.strip() for t in self.map_tags.get(code, "").split(",") if t.strip()
+            t.strip()
+            for t in self.map_tags.get(code, "").split(",")
+            if t.strip()
         ]
         for tag, var in self.tag_cb_vars.items():
             var.set(tag in active_tags)
 
+    def select_all_current_tab(self):
+        """Selects ONLY installed (green) maps in the current active DLC tab."""
+        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
+        category_name = list(self.dlc_maps.keys())[current_tab_idx]
+        lb, maps = self.map_listboxes[category_name]
+
+        lb.selection_clear(0, tk.END)
+        for idx, (code, name) in enumerate(maps):
+            if code.lower() in self.found_maps:
+                lb.select_set(idx)
+
+    def deselect_all_current_tab(self):
+        """Deselects all items in current DLC tab listbox."""
+        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
+        category_name = list(self.dlc_maps.keys())[current_tab_idx]
+        lb, maps = self.map_listboxes[category_name]
+
+        lb.selection_clear(0, tk.END)
+
+    def load_default_map_image(self):
+        """Loads mw2.png from root folder as default preview when no map is selected."""
+        img_path = "mw2.png"
+        if os.path.exists(img_path):
+            try:
+                self.default_map_photo = tk.PhotoImage(file=img_path)
+                self.map_img_label.config(
+                    image=self.default_map_photo, text=""
+                )
+            except Exception:
+                self.map_img_label.config(image="", text="Call of Duty: MW2")
+        else:
+            self.map_img_label.config(image="", text="Call of Duty: MW2")
+
     def on_tag_checkbox_toggled(self):
+        if not hasattr(self, "current_selected_map") or not self.current_selected_map:
+            return
+
         code, name = self.current_selected_map
         selected_tags = [
             tag for tag, var in self.tag_cb_vars.items() if var.get()
@@ -1231,12 +1404,153 @@ class IW4xServerManager:
         self.map_tags[code] = tag_str
         self.save_map_tags()
         self.refresh_map_listboxes()
-        self.log(f"[TAGS] Updated tags for {code}: [{tag_str}]")
+        self.refresh_rotation_listbox()
+        self.update_rotation_count()
+
+    def reset_community_tags(self):
+        """Resets all map gametype tags to default community recommendations."""
+        if not messagebox.askyesno(
+            "Reset Tags",
+            "Are you sure you want to reset all map tags to community recommendations?",
+        ):
+            return
+
+        for code, rec in self.community_recommendations.items():
+            # Extract tags preceding the '—' dash
+            tags_part = rec.split("—")[0].strip()
+            self.map_tags[code] = tags_part
 
         self.save_map_tags()
-        self.update_rotation_count()  # Refresh counter instantly
+        self.refresh_map_listboxes()
+        self.refresh_rotation_listbox()
+
+        if hasattr(self, "current_selected_map") and self.current_selected_map:
+            self.update_map_details_panel(*self.current_selected_map)
+
+        self.update_rotation_count()
+        messagebox.showinfo(
+            "Reset Complete", "All map tags reset to community recommendations!"
+        )
+
+    def refresh_rotation_listbox(self):
+        """Refreshes Active Server Rotation listbox with explicit map+gametype entries."""
+        self.rotation_listbox.delete(0, tk.END)
+        for item in self.active_rotation:
+            if isinstance(item, (list, tuple)):
+                code, tag = item[0], item[1]
+            else:
+                code, tag = item, "TDM"
+
+            name = self.get_map_name_by_code(code)
+            self.rotation_listbox.insert(
+                tk.END, f"{name} ({code})  ▸  [{tag}]"
+            )
+
+    def get_map_name_by_code(self, code):
+        """Finds display name for a map code."""
+        for cat, maps in self.dlc_maps.items():
+            for m_code, m_name in maps:
+                if m_code == code:
+                    return m_name
+        return code
+
+    def add_selected_to_rotation(self):
+        """Expands selected maps by their active tags into individual rotation entries."""
+        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
+        category_name = list(self.dlc_maps.keys())[current_tab_idx]
+        lb, maps = self.map_listboxes[category_name]
+
+        selected_indices = lb.curselection()
+        added = False
+        for idx in selected_indices:
+            code, name = maps[idx]
+            if code.lower() in self.found_maps:
+                tag_str = self.map_tags.get(code, "TDM")
+                tags = [t.strip() for t in tag_str.split(",") if t.strip()]
+                if not tags or "ALL" in tags:
+                    tags = ["TDM"]
+
+                for tag in tags:
+                    self.active_rotation.append((code, tag))
+                    added = True
+
+        if added:
+            self.refresh_rotation_listbox()
+            self.update_rotation_count()
+
+    def add_all_current_tab_to_rotation(self):
+        """Adds all installed maps in active tab expanded by tags into rotation."""
+        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
+        category_name = list(self.dlc_maps.keys())[current_tab_idx]
+        lb, maps = self.map_listboxes[category_name]
+
+        for code, name in maps:
+            if code.lower() in self.found_maps:
+                tag_str = self.map_tags.get(code, "TDM")
+                tags = [t.strip() for t in tag_str.split(",") if t.strip()]
+                if not tags or "ALL" in tags:
+                    tags = ["TDM"]
+
+                for tag in tags:
+                    self.active_rotation.append((code, tag))
+
+        self.refresh_rotation_listbox()
+        self.update_rotation_count()
+
+    def remove_selected_from_rotation(self):
+        """Removes selected item from active server rotation listbox."""
+        selected = self.rotation_listbox.curselection()
+        if not selected:
+            return
+
+        idx = selected[0]
+        if 0 <= idx < len(self.active_rotation):
+            del self.active_rotation[idx]
+            self.refresh_rotation_listbox()
+            self.update_rotation_count()
+
+    def clear_rotation(self):
+        """Clears all maps from active server rotation."""
+        self.active_rotation.clear()
+        self.refresh_rotation_listbox()
+        self.update_rotation_count()
+
+    def move_rotation_item(self, direction):
+        """Moves selected map entry UP (-1) or DOWN (+1) in rotation order."""
+        selected = self.rotation_listbox.curselection()
+        if not selected:
+            return
+
+        idx = selected[0]
+        new_idx = idx + direction
+
+        if 0 <= new_idx < len(self.active_rotation):
+            # Swap items
+            self.active_rotation[idx], self.active_rotation[new_idx] = (
+                self.active_rotation[new_idx],
+                self.active_rotation[idx],
+            )
+            self.refresh_rotation_listbox()
+            self.rotation_listbox.select_set(new_idx)
+            self.update_rotation_count()
+
+    def on_rotation_item_selected(self, event):
+        """Handles selecting an item in the Active Rotation listbox."""
+        selected = self.rotation_listbox.curselection()
+        if selected:
+            idx = selected[0]
+            code = self.active_rotation[idx]
+            name = self.get_map_name_by_code(code)
+            self.update_map_details_panel(code, name)
+
+    def get_selected_maps(self):
+        """Returns map codes currently in active server rotation (installed only)."""
+        return [
+            code for code in self.active_rotation if code.lower() in self.found_maps
+        ]
 
     def build_map_rotation_string(self):
+        """Generates the linear sv_mapRotation string with exact gametype transitions."""
         gt_engine_map = {
             "tdm": "war",
             "hq": "koth",
@@ -1253,41 +1567,36 @@ class IW4xServerManager:
         }
 
         mode = self.gametype_mode_var.get().lower()
-        selected_maps = self.get_selected_maps()
-        if not selected_maps:
-            selected_maps = ["mp_afghan"]
 
-        rotation_pairs = []
+        # Parse normalized active rotation entries
+        rotation_items = []
+        for item in self.active_rotation:
+            if isinstance(item, (list, tuple)):
+                code, tag = item[0], item[1]
+            else:
+                code, tag = item, "TDM"
 
-        if mode != "custom":
-            # OVERRIDE: Force chosen single gametype across all selected maps
-            engine_gt = gt_engine_map.get(mode, mode)
-            for code in selected_maps:
-                rotation_pairs.append((engine_gt, code))
-        else:
-            # CUSTOM: Use map tags specified for each map
-            for code in selected_maps:
-                map_tag_str = self.map_tags.get(code, "").upper()
-                allowed_tags = [
-                    t.strip() for t in map_tag_str.split(",") if t.strip()
-                ]
+            if code.lower() in self.found_maps:
+                rotation_items.append((code, tag))
 
-                if not allowed_tags or "ALL" in allowed_tags:
-                    rotation_pairs.append(("war", code))  # Default fallback
-                else:
-                    for tag in allowed_tags:
-                        tag_gt = tag.lower()
-                        engine_gt = gt_engine_map.get(tag_gt, tag_gt)
-                        rotation_pairs.append((engine_gt, code))
+        if not rotation_items:
+            rotation_items = [("mp_afghan", "TDM")]
 
-        # Build clean string (engine handles randomization via sv_randomMapRotation)
         parts = []
         current_gt = None
-        for engine_gt, map_code in rotation_pairs:
+
+        for code, tag in rotation_items:
+            if mode != "custom":
+                tag_gt = mode
+            else:
+                tag_gt = tag.lower()
+
+            engine_gt = gt_engine_map.get(tag_gt, tag_gt)
+
             if engine_gt != current_gt:
                 parts.append(f"gametype {engine_gt}")
                 current_gt = engine_gt
-            parts.append(f"map {map_code}")
+            parts.append(f"map {code}")
 
         return f'set sv_mapRotation "{" ".join(parts)}"'
 
@@ -1303,26 +1612,20 @@ class IW4xServerManager:
             return
 
         maps = self.map_listboxes[category_name][1]
-
-        # Get exact row index under mouse cursor
         idx = lb.nearest(event.y)
         bbox = lb.bbox(idx)
 
-        # Ensure click occurred on an item row, not empty space
         if bbox and bbox[1] <= event.y <= (bbox[1] + bbox[3]):
             if 0 <= idx < len(maps):
                 code, name = maps[idx]
-
-                # Update details panel immediately for clicked map
                 self.update_map_details_panel(code, name)
 
-                # If map is uninstalled, prevent selection
                 if code.lower() not in self.found_maps:
                     self.root.after(10, lambda: lb.selection_clear(idx))
 
     def format_map_label(self, code, name):
         tag_str = self.map_tags.get(code, "ALL")
-        return f"{name} ({code})   ▸  [{tag_str}]"
+        return f"{name} ({code})  ▸  [{tag_str}]"
 
     def refresh_map_listboxes(self):
         for category_name, (lb, maps) in self.map_listboxes.items():
@@ -1332,43 +1635,13 @@ class IW4xServerManager:
             for idx, (code, name) in enumerate(maps):
                 lb.insert(tk.END, self.format_map_label(code, name))
 
-                # Color coding: Green for found, Red for missing
                 if code.lower() in self.found_maps:
-                    lb.itemconfig(idx, foreground="#2e7d32")  # Dark Green
+                    lb.itemconfig(idx, foreground="#2e7d32")  # Green
                 else:
-                    lb.itemconfig(idx, foreground="#c62828")  # Dark Red
+                    lb.itemconfig(idx, foreground="#c62828")  # Red
 
                 if idx in selected_indices:
                     lb.select_set(idx)
-
-    def edit_selected_map_tag(self):
-        # Find active listbox tab
-        current_tab_idx = self.map_notebook.index(self.map_notebook.select())
-        category_name = list(self.dlc_maps.keys())[current_tab_idx]
-        lb, maps = self.map_listboxes[category_name]
-
-        selected = lb.curselection()
-        if not selected:
-            messagebox.showinfo(
-                "Info", "Please select a map in the current listbox to edit its tags."
-            )
-            return
-
-        idx = selected[0]
-        code, name = maps[idx]
-        current_tag = self.map_tags.get(code, "ALL")
-
-        new_tag = simpledialog.askstring(
-            "Edit Map Tags",
-            f"Enter recommended gametype tags for map '{name}' ({code}):\n(e.g., TDM, DOM, SD, CTF)",
-            initialvalue=current_tag,
-        )
-
-        if new_tag is not None:
-            self.map_tags[code] = new_tag.strip().upper()
-            self.save_map_tags()
-            self.refresh_map_listboxes()
-            self.log(f"[TAGS] Updated tags for {code}: [{self.map_tags[code]}]")
 
     def save_rotation_preset(self):
         filepath = filedialog.asksaveasfilename(
@@ -1380,8 +1653,16 @@ class IW4xServerManager:
         if not filepath:
             return
 
-        selected_maps = self.get_selected_maps()
-        data = {"selected_maps": selected_maps, "map_tags": self.map_tags}
+        data = {
+            "active_rotation": [
+                [code, tag]
+                for (code, tag) in [
+                    item if isinstance(item, (list, tuple)) else (item, "TDM")
+                    for item in self.active_rotation
+                ]
+            ],
+            "map_tags": self.map_tags,
+        }
         try:
             with open(filepath, "w") as f:
                 json.dump(data, f, indent=4)
@@ -1404,19 +1685,25 @@ class IW4xServerManager:
             with open(filepath, "r") as f:
                 data = json.load(f)
 
-            saved_maps = set(data.get("selected_maps", []))
+            raw_rotation = data.get("active_rotation", data.get("selected_maps", []))
+            self.active_rotation = []
 
-            # Deselect all, then select loaded installed maps
-            for category, (lb, maps) in self.map_listboxes.items():
-                lb.selection_clear(0, tk.END)
-                for idx, (code, name) in enumerate(maps):
-                    if code in saved_maps and code.lower() in self.found_maps:
-                        lb.select_set(idx)
+            for item in raw_rotation:
+                if isinstance(item, (list, tuple)):
+                    code, tag = item[0], item[1]
+                else:
+                    code, tag = item, "TDM"
+
+                if code.lower() in self.found_maps:
+                    self.active_rotation.append((code, tag))
 
             if "map_tags" in data:
                 self.map_tags.update(data["map_tags"])
                 self.save_map_tags()
-                self.refresh_map_listboxes()
+
+            self.refresh_map_listboxes()
+            self.refresh_rotation_listbox()
+            self.update_rotation_count()
 
             messagebox.showinfo(
                 "Success", f"Preset loaded from:\n{os.path.basename(filepath)}"
@@ -1442,6 +1729,8 @@ class IW4xServerManager:
                 self.found_maps.add(d.lower())
 
         self.refresh_map_listboxes()
+        self.refresh_rotation_listbox()
+        self.update_rotation_count()
 
         self.log(
             f"[SCAN] Discovered {len(self.found_maps)} map assets in: {game_dir}"
@@ -1449,12 +1738,37 @@ class IW4xServerManager:
         if not silent:
             messagebox.showinfo("Scan Complete", "Map directory scan finished!")
 
+    def load_map_tags(self):
+        """Loads default and custom saved map tags from map_tags.json."""
+        default_tags = getattr(self, "default_tags", {})
+        tags = dict(default_tags)
+        tag_file = os.path.join(APP_DIR, "map_tags.json")
+        if os.path.exists(tag_file):
+            try:
+                with open(tag_file, "r") as f:
+                    user_tags = json.load(f)
+                    tags.update(user_tags)
+            except Exception:
+                pass
+        return tags
+
+    def save_map_tags(self):
+        """Saves current map tags to map_tags.json."""
+        tag_file = os.path.join(APP_DIR, "map_tags.json")
+        try:
+            with open(tag_file, "w") as f:
+                json.dump(self.map_tags, f, indent=4)
+        except Exception as e:
+            if hasattr(self, "log"):
+                self.log(f"[WARN] Failed to save custom map tags: {e}")
+
     def trigger_map_scan(self, reason="Folder/Config Change"):
+        """Triggers a directory scan for maps when path changes."""
         game_dir = self.path_var.get()
         if not os.path.exists(game_dir):
             return
 
-        if self.auto_scan_var.get():
+        if hasattr(self, "auto_scan_var") and self.auto_scan_var.get():
             self.scan_installed_maps(silent=True)
         else:
             answer = messagebox.askyesno(
@@ -1463,16 +1777,6 @@ class IW4xServerManager:
             )
             if answer:
                 self.scan_installed_maps(silent=False)
-
-    def get_selected_maps(self):
-        selected = []
-        for category, (lb, maps) in self.map_listboxes.items():
-            indices = lb.curselection()
-            for idx in indices:
-                code = maps[idx][0]
-                if code.lower() in self.found_maps:
-                    selected.append(code)
-        return selected
 
     # --- TAB 5: BOTWARFARE CONFIG (EXTENDED) ---
     def setup_bots_tab(self):
