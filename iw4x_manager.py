@@ -1378,10 +1378,7 @@ class IW4xServerManager:
         lb.selection_clear(0, tk.END)
 
     def load_default_map_image(self):
-        """Loads and resizes mw2.png from root folder as default preview when no map is selected."""
-        import os
-
-        # Check APP_DIR or fallback to current directory
+        """Loads and stretches mw2.png to fit the 240x125 preview frame."""
         img_path = os.path.join(APP_DIR, "mw2.png")
         if not os.path.exists(img_path):
             img_path = os.path.join(
@@ -1390,29 +1387,27 @@ class IW4xServerManager:
 
         if os.path.exists(img_path):
             try:
-                # 1. Try PIL (Pillow) - Supports all PNG formats and resizes cleanly
                 from PIL import Image, ImageTk
 
                 pil_img = Image.open(img_path)
+                # Stretch and resize image to match container (240x125)
                 pil_img = pil_img.resize((240, 125), Image.Resampling.LANCZOS)
                 self.default_map_photo = ImageTk.PhotoImage(pil_img)
                 self.map_img_label.config(
                     image=self.default_map_photo, text="", bg="#f8f9fa"
                 )
             except ImportError:
-                # 2. Fallback to basic Tkinter PhotoImage if Pillow isn't installed
+                # Fallback if Pillow is not installed
                 try:
                     self.default_map_photo = tk.PhotoImage(file=img_path)
                     self.map_img_label.config(
                         image=self.default_map_photo, text=""
                     )
-                except Exception as e:
-                    if hasattr(self, "log"):
-                        self.log(f"[WARN] Failed to load mw2.png: {e}")
+                except Exception:
                     self.map_img_label.config(image="", text="Call of Duty: MW2")
             except Exception as e:
                 if hasattr(self, "log"):
-                    self.log(f"[WARN] Failed to load mw2.png with PIL: {e}")
+                    self.log(f"[WARN] Failed to load mw2.png: {e}")
                 self.map_img_label.config(image="", text="Call of Duty: MW2")
         else:
             self.map_img_label.config(image="", text="Call of Duty: MW2")
@@ -1570,10 +1565,14 @@ class IW4xServerManager:
             self.update_map_details_panel(code, name)
 
     def get_selected_maps(self):
-        """Returns map codes currently in active server rotation (installed only)."""
-        return [
-            code for code in self.active_rotation if code.lower() in self.found_maps
-        ]
+        """Returns list of map code strings currently in active server rotation (installed only)."""
+        maps = []
+        for item in self.active_rotation:
+            # Extract map code string if item is a tuple/list (e.g., ("mp_afghan", "TDM"))
+            code = item[0] if isinstance(item, (list, tuple)) else item
+            if isinstance(code, str) and code.lower() in self.found_maps:
+                maps.append(code)
+        return maps
 
     def build_map_rotation_string(self):
         """Generates the linear sv_mapRotation string with exact gametype transitions."""
@@ -1594,15 +1593,13 @@ class IW4xServerManager:
 
         mode = self.gametype_mode_var.get().lower()
 
-        # Parse normalized active rotation entries
+        # 1. Parse active rotation entries
         rotation_items = []
         for item in self.active_rotation:
-            if isinstance(item, (list, tuple)):
-                code, tag = item[0], item[1]
-            else:
-                code, tag = item, "TDM"
+            code = item[0] if isinstance(item, (list, tuple)) else item
+            tag = item[1] if isinstance(item, (list, tuple)) else "TDM"
 
-            if code.lower() in self.found_maps:
+            if isinstance(code, str) and code.lower() in self.found_maps:
                 rotation_items.append((code, tag))
 
         if not rotation_items:
@@ -1611,18 +1608,31 @@ class IW4xServerManager:
         parts = []
         current_gt = None
 
-        for code, tag in rotation_items:
-            if mode != "custom":
-                tag_gt = mode
-            else:
+        # 2. Build rotation based on Gametype Tab mode
+        if mode != "custom":
+            # SINGLE GAMETYPE MODE (e.g., 'war')
+            # Force the chosen engine gametype across ALL maps
+            engine_gt = gt_engine_map.get(mode, mode)
+            parts.append(f"gametype {engine_gt}")
+
+            # Extract map codes without consecutive duplicates
+            last_map = None
+            for code, tag in rotation_items:
+                if code != last_map:
+                    parts.append(f"map {code}")
+                    last_map = code
+        else:
+            # CUSTOM MODE (Use individual tags from Active Rotation list)
+            for code, tag in rotation_items:
                 tag_gt = tag.lower()
+                engine_gt = gt_engine_map.get(tag_gt, tag_gt)
 
-            engine_gt = gt_engine_map.get(tag_gt, tag_gt)
+                # Only emit 'gametype' command when the gametype changes
+                if engine_gt != current_gt:
+                    parts.append(f"gametype {engine_gt}")
+                    current_gt = engine_gt
 
-            if engine_gt != current_gt:
-                parts.append(f"gametype {engine_gt}")
-                current_gt = engine_gt
-            parts.append(f"map {code}")
+                parts.append(f"map {code}")
 
         return f'set sv_mapRotation "{" ".join(parts)}"'
 
@@ -1968,49 +1978,102 @@ class IW4xServerManager:
 
     # --- BOTTOM PERSISTENT PANEL ---
     def setup_bottom_panel(self):
-        # Bottom Control Bar Frame
-        bottom_frame = ttk.Frame(self.root)
-        bottom_frame.pack(side="bottom", fill="x", padx=10, pady=8)
+        """Creates the bottom section containing the live event log and action buttons."""
+        # Main Bottom Frame
+        bottom_container = ttk.Frame(self.root)
+        bottom_container.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
 
-        # 1. Counter Label — Docks to the FAR LEFT
+        # 1. EVENT LOG PANEL
+        log_frame = ttk.LabelFrame(bottom_container, text=" Server Console / Event Log ")
+        log_frame.pack(fill="x", expand=True, pady=(0, 6))
+
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical")
+        log_scroll.pack(side="right", fill="y")
+
+        self.log_text = tk.Text(
+            log_frame,
+            height=5,
+            wrap="word",
+            font=("Consolas", 8),
+            bg="#1e1e1e",
+            fg="#d4d4d4",
+            insertbackground="white",
+            relief="solid",
+            bd=1,
+            yscrollcommand=log_scroll.set,
+        )
+        self.log_text.pack(fill="both", expand=True, padx=4, pady=4)
+        log_scroll.config(command=self.log_text.yview)
+
+        # 2. ACTION BUTTONS & COUNTER BAR
+        btn_bar = ttk.Frame(bottom_container)
+        btn_bar.pack(fill="x")
+
+        # Far Left: Rotation Total Counter
         self.rotation_count_label = ttk.Label(
-            bottom_frame,
+            btn_bar,
             text="📊 Rotation Total: 0 map entries",
             font=("Helvetica", 9, "bold"),
             foreground="#1f6aa5",
         )
-        self.rotation_count_label.pack(side="left", padx=10, pady=2)
+        self.rotation_count_label.pack(side="left", padx=5, pady=2)
 
-        # 2. Action Buttons — Docked to the RIGHT (Packed in reverse order)      
-        # Far Right Position: Save Config
+        # Clear Log Button
         ttk.Button(
-            bottom_frame,
+            btn_bar,
+            text="🧹 Clear Log",
+            command=self.clear_log,
+            width=12,
+        ).pack(side="left", padx=10)
+
+        # Far Right Action Buttons (Packed Right to Left)
+        ttk.Button(
+            btn_bar,
             text="💾 Save Config",
             command=self.save_config,
-        ).pack(side="right", padx=5)
+        ).pack(side="right", padx=4)
 
-        # Middle Right Position: Run Linux
         ttk.Button(
-            bottom_frame,
+                    btn_bar,
+                    text="🛑 Stop Server",
+                    command=self.stop_server,
+                    width=14,
+                ).pack(side="right", padx=4)
+
+        ttk.Button(
+            btn_bar,
             text="🐧 Run (Linux)",
             command=self.launch_server_linux,
-            width=18,
-        ).pack(side="right", padx=5)
+            width=16,
+        ).pack(side="right", padx=4)
 
-        # Inner Right Position: Run Windows
         ttk.Button(
-            bottom_frame,
+            btn_bar,
             text="🪟 Run (Windows)",
             command=self.launch_server_windows,
-            width=18,
-        ).pack(side="right", padx=5)
+            width=16,
+        ).pack(side="right", padx=4)
 
-        # Initial calculation on startup
-        self.update_rotation_count()
+        # Log initial ready message
+        self.log("Ready. Select 'Run (Linux)' or 'Run (Windows)' depending on your OS.")
 
-        self.log(
-            "Ready. Select 'Run (Linux)' or 'Run (Windows)' depending on your OS."
-        )
+    def log(self, message):
+        """Appends a timestamped message to the event log widget."""
+        import datetime
+
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        formatted_msg = f"[{timestamp}] {message}\n"
+
+        if hasattr(self, "log_text") and self.log_text:
+            self.log_text.insert(tk.END, formatted_msg)
+            self.log_text.see(tk.END)
+        else:
+            print(f"[LOG] {formatted_msg.strip()}")
+
+    def clear_log(self):
+        """Clears the console log window."""
+        if hasattr(self, "log_text") and self.log_text:
+            self.log_text.delete("1.0", tk.END)
 
     def update_rotation_count(self):
         """Calculates and updates total map+gametype entries in rotation."""
@@ -2022,13 +2085,6 @@ class IW4xServerManager:
             self.rotation_count_label.config(
                 text=f"📊 Rotation Total: {total_entries} map entries"
             )
-
-    def log(self, message):
-        if hasattr(self, "log_text") and self.log_text:
-            self.log_text.insert(tk.END, message + "\n")
-            self.log_text.see(tk.END)
-        else:
-            print(f"[LOG] {message}")  # Fallback print if log_text isn't built yet
 
     # --- CONFIG GENERATION LOGIC ---
     def generate_cfg(self):
@@ -2180,108 +2236,15 @@ class IW4xServerManager:
             messagebox.showerror("Error", f"Failed to save server.cfg:\n{e}")
             return False
 
-    def launch_server(self):
-        """Main entry point for launching the server on any OS."""
-        if platform.system() == "Windows":
-            self.launch_server_windows()
-        else:
-            self.launch_server_linux()
-
-    def launch_server_linux(self):
-        game_dir = os.path.abspath(self.path_var.get())
-        exe_path = os.path.join(game_dir, "iw4x.exe")
-
-        if not os.path.isfile(exe_path):
-            messagebox.showwarning(
-                "Warning",
-                f"iw4x.exe was not found in:\n{game_dir}\nAttempting launch anyway...",
-            )
-
-        if not self.save_config(show_popup=False):
-            return
-
+    def _build_launch_args(self):
+        """Helper to build common command-line arguments for IW4x."""
         lan_flag = "1" if "LAN" in self.network_var.get() else "0"
         ded_flag = "1" if "LAN" in self.network_var.get() else "2"
-        port = self.port_var.get()
+        port = str(self.port_var.get())
 
-        wine_cmd = (
-            f"wine iw4x.exe -dedicated -g_log games_mp.log "
-            f"+set dedicated {ded_flag} +set net_port {port} +set sv_lanOnly {lan_flag} "
-            f"+exec server.cfg +map_rotate"
-        )
-
-        # Added pause so terminal stays open if server crashes/exits
-        pause_cmd = f"{wine_cmd}; echo ''; echo '--- Server process ended. Press Enter to close ---'; read"
-
-        terminals = [
-            ["gnome-terminal", "--", "bash", "-c", pause_cmd],
-            ["x-terminal-emulator", "-e", f"bash -c '{pause_cmd}'"],
-            ["xterm", "-e", f"bash -c '{pause_cmd}'"],
-        ]
-
-        launched = False
-        for term_cmd in terminals:
-            try:
-                subprocess.Popen(term_cmd, cwd=game_dir)
-                self.log(
-                    f"[LAUNCH-LINUX] Server opened in terminal using '{term_cmd[0]}'."
-                )
-                launched = True
-                break
-            except FileNotFoundError:
-                continue
-
-        if not launched:
-            cmd = [
-                "wine",
-                "iw4x.exe",
-                "-dedicated",
-                "-g_log",
-                "games_mp.log",
-                "+set",
-                "dedicated",
-                ded_flag,
-                "+set",
-                "net_port",
-                port,
-                "+set",
-                "sv_lanOnly",
-                lan_flag,
-                "+exec",
-                "server.cfg",
-                "+map_rotate",
-            ]
-            try:
-                subprocess.Popen(cmd, cwd=game_dir)
-                self.log(
-                    "[LAUNCH-LINUX] Server launched as background Wine process."
-                )
-            except Exception as e:
-                self.log(f"[ERROR] Failed to start process: {e}")
-                messagebox.showerror(
-                    "Error", f"Could not launch process:\n{e}"
-                )
-
-    def launch_server_windows(self):
-        game_dir = os.path.abspath(self.path_var.get())
-        exe_path = os.path.join(game_dir, "iw4x.exe")
-
-        if not os.path.isfile(exe_path):
-            messagebox.showwarning(
-                "Warning",
-                f"iw4x.exe was not found in:\n{game_dir}\nAttempting launch anyway...",
-            )
-
-        if not self.save_config(show_popup=False):
-            return
-
-        lan_flag = "1" if "LAN" in self.network_var.get() else "0"
-        ded_flag = "1" if "LAN" in self.network_var.get() else "2"
-        port = self.port_var.get()
-
-        cmd = [
-            exe_path,
+        args = [
             "-dedicated",
+            "-stdout",  # Redirects engine logging to terminal/console stream
             "-g_log",
             "games_mp.log",
             "+set",
@@ -2297,21 +2260,118 @@ class IW4xServerManager:
             "server.cfg",
             "+map_rotate",
         ]
+        return args
+
+    def launch_server(self):
+        """Main entry point for launching the server on any OS."""
+        # 1. Prevent spawning duplicate instances
+        if (
+            hasattr(self, "server_process")
+            and self.server_process
+            and self.server_process.poll() is None
+        ):
+            messagebox.showwarning(
+                "Server Active",
+                "A server instance is already running! Stop it first before launching a new one.",
+            )
+            return
+
+        # 2. Validate paths & active rotation
+        game_dir = os.path.abspath(self.path_var.get())
+        exe_path = os.path.join(game_dir, "iw4x.exe")
+
+        if not os.path.isfile(exe_path):
+            messagebox.showwarning(
+                "Warning",
+                f"iw4x.exe was not found in:\n{game_dir}\nAttempting launch anyway...",
+            )
+
+        if not getattr(self, "active_rotation", None):
+            messagebox.showwarning("Warning", "No maps in active rotation!")
+            return
+
+        # 3. Auto-save config and GUI app state before launching
+        if not self.save_config(show_popup=False):
+            return
+
+        if hasattr(self, "save_app_state"):
+            self.save_app_state()
+
+        # 4. Delegate to OS-specific launcher and track subprocess handle
+        if platform.system() == "Windows":
+            self.server_process = self.launch_server_windows(game_dir, exe_path)
+        else:
+            self.server_process = self.launch_server_linux(game_dir)
+
+    def launch_server_linux(self, game_dir=None):
+        """Launches the server on Linux via terminal emulator or direct Wine process."""
+        if game_dir is None:
+            game_dir = os.path.abspath(self.path_var.get())
+
+        args = self._build_launch_args()
+        wine_cmd = f"wine iw4x.exe {' '.join(args)}"
+        pause_cmd = f"{wine_cmd}; echo ''; echo '--- Server process ended. Press Enter to close ---'; read"
+
+        terminals = [
+            ["gnome-terminal", "--", "bash", "-c", pause_cmd],
+            ["x-terminal-emulator", "-e", f"bash -c '{pause_cmd}'"],
+            ["xterm", "-e", f"bash -c '{pause_cmd}'"],
+        ]
+
+        # Try launching inside a visible terminal emulator window
+        for term_cmd in terminals:
+            try:
+                proc = subprocess.Popen(
+                    term_cmd, cwd=game_dir, stdin=subprocess.PIPE
+                )
+                self.log(
+                    f"[LAUNCH-LINUX] Server opened in terminal using '{term_cmd[0]}'."
+                )
+                return proc
+            except FileNotFoundError:
+                continue
+
+        # Fallback to direct Wine process execution
+        cmd = ["wine", "iw4x.exe"] + args
+        try:
+            proc = subprocess.Popen(cmd, cwd=game_dir, stdin=subprocess.PIPE)
+            self.log("[LAUNCH-LINUX] Server launched as background Wine process.")
+            return proc
+        except Exception as e:
+            self.log(f"[ERROR] Failed to start process: {e}")
+            messagebox.showerror("Error", f"Could not launch process:\n{e}")
+            return None
+
+    def launch_server_windows(self, game_dir=None, exe_path=None):
+        """Launches the server on Windows in a new command prompt console."""
+        if game_dir is None:
+            game_dir = os.path.abspath(self.path_var.get())
+            exe_path = os.path.join(game_dir, "iw4x.exe")
+
+        args = self._build_launch_args()
+
+        # Wrap with cmd.exe to assign a distinct console window title
+        title = "IW4x Dedicated Server"
+        cmd = ["cmd.exe", "/c", "title", title, "&&", exe_path] + args
 
         self.log(f"[LAUNCH-WINDOWS] Executing in {game_dir}:")
         self.log(" ".join(cmd))
 
         try:
             creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-            subprocess.Popen(cmd, cwd=game_dir, creationflags=creationflags)
+            proc = subprocess.Popen(
+                cmd, cwd=game_dir, creationflags=creationflags, stdin=subprocess.PIPE
+            )
             self.log(
                 "[OK] Windows server started successfully in a new console window."
             )
+            return proc
         except Exception as e:
             self.log(f"[ERROR] Windows launch failed: {e}")
             messagebox.showerror(
                 "Error", f"Could not launch Windows process:\n{e}"
             )
+            return None
 
     def save_app_state(self):
         state_file = os.path.join(APP_DIR, "manager_settings.json")
@@ -2339,8 +2399,16 @@ class IW4xServerManager:
             "aim_assist": self.aim_assist_var.get(),
             "auto_scan": self.auto_scan_var.get(),
             "gametype_mode": self.gametype_mode_var.get(),
+            "active_rotation": [
+                [code, tag]
+                for (code, tag) in [
+                    item if isinstance(item, (list, tuple)) else (item, "TDM")
+                    for item in self.active_rotation
+                ]
+            ],
             "gt_rules": self.gt_rules_data,
             "selected_maps": self.get_selected_maps(),
+            "map_tags": getattr(self, "map_tags", {}),
             "randomize_rotation": self.randomize_rotation_var.get(),
             "bot_enable": self.bot_enable_var.get(),
             "bot_wait": self.bot_wait_var.get(),
@@ -2361,8 +2429,9 @@ class IW4xServerManager:
         try:
             with open(state_file, "w") as f:
                 json.dump(state, f, indent=4)
+            self.log("[STATE] Saved current rotation and gametype settings.")
         except Exception as e:
-            self.log(f"[WARN] Failed to save manager settings: {e}")
+            self.log(f"[WARN] Failed to save app state: {e}")
 
     def load_app_state(self):
         state_file = os.path.join(APP_DIR, "manager_settings.json")
@@ -2397,12 +2466,20 @@ class IW4xServerManager:
             self.aim_assist_var.set(state.get("aim_assist", self.aim_assist_var.get()))
             self.auto_scan_var.set(state.get("auto_scan", self.auto_scan_var.get()))
 
-            # Restore Gametype Mode
+            # 1. Restore Gametype Radio Mode (matches value case)
             if "gametype_mode" in state:
-                self.gametype_mode_var.set(state["gametype_mode"])
-            elif "gametypes" in state:
-                # Legacy fallback for older save files
-                self.gametype_mode_var.set("CUSTOM")
+                mode_val = str(state["gametype_mode"]).strip()
+                self.gametype_mode_var.set(mode_val)
+
+            # 2. Restore Active Rotation
+            if "active_rotation" in state:
+                raw_rot = state["active_rotation"]
+                self.active_rotation = []
+                for item in raw_rot:
+                    if isinstance(item, (list, tuple)):
+                        self.active_rotation.append((item[0], item[1]))
+                    else:
+                        self.active_rotation.append((item, "TDM"))
 
             if "gt_rules" in state:
                 self.gt_rules_data.update(state["gt_rules"])
@@ -2420,10 +2497,12 @@ class IW4xServerManager:
                         if code in saved_maps and code.lower() in self.found_maps:
                             lb.select_set(idx)
 
-            # Restore Map randomization
-            self.randomize_rotation_var.set(
-                state.get("randomize_rotation", self.randomize_rotation_var.get())
-            )
+            # 3. Restore Map Tags & Shuffle Checkbox
+            if "map_tags" in state:
+                self.map_tags.update(state["map_tags"])
+
+            if "randomize_rotation" in state:
+                self.randomize_rotation_var.set(state["randomize_rotation"])
 
             # Restore Bots
             self.bot_enable_var.set(state.get("bot_enable", self.bot_enable_var.get()))
@@ -2443,9 +2522,84 @@ class IW4xServerManager:
             self.bot_prestige_var.set(state.get("bot_prestige", self.bot_prestige_var.get()))
 
             self.log("[CONFIG] Auto-loaded saved configuration.")
-        except Exception as e:
-            self.log(f"[WARN] Failed to load saved state: {e}")
 
+            # Refresh display widgets
+            self.refresh_map_listboxes()
+            self.refresh_rotation_listbox()
+            self.update_rotation_count()
+            self.log("[STATE] Successfully loaded previous session settings.")
+        except Exception as e:
+            self.log(f"[WARN] Failed to load previous app state: {e}")
+
+    def stop_server(self):
+        """Safely stops ONLY the server instance without affecting the client game."""
+        stopped = False
+
+        # 1. Primary Method: Kill process tree using the tracked PID
+        if hasattr(self, "server_process") and self.server_process:
+            if self.server_process.poll() is None:
+                try:
+                    pid = self.server_process.pid
+                    if platform.system() == "Windows":
+                        # /T kills child processes, /PID targets ONLY the server's PID
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            capture_output=True,
+                        )
+                    else:
+                        self.server_process.terminate()
+
+                    self.log(f"[SERVER] Terminated server process (PID: {pid}).")
+                    stopped = True
+                except Exception as e:
+                    self.log(f"[WARN] Failed to terminate PID handle: {e}")
+
+        # 2. Fallback Method: Target by Window Title filter (Windows only)
+        if not stopped and platform.system() == "Windows":
+            try:
+                # Filter specifically by IMAGENAME and WINDOWTITLE
+                res = subprocess.run(
+                    [
+                        "taskkill",
+                        "/F",
+                        "/FI",
+                        "IMAGENAME eq iw4x.exe",
+                        "/FI",
+                        "WINDOWTITLE eq IW4x Dedicated Server*",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if "SUCCESS" in res.stdout.upper() or res.returncode == 0:
+                    self.log(
+                        "[SERVER] Closed dedicated server window via window title filter."
+                    )
+                    stopped = True
+            except Exception as e:
+                self.log(f"[WARN] Window title taskkill failed: {e}")
+
+        # Linux Fallback
+        if not stopped and platform.system() != "Windows":
+            try:
+                res = subprocess.run(["pkill", "-f", "iw4x.exe -dedicated"], capture_output=True)
+                if res.returncode == 0:
+                    self.log("[SERVER] Stopped Linux dedicated server process.")
+                    stopped = True
+            except Exception as e:
+                self.log(f"[WARN] Linux pkill failed: {e}")
+
+        self.server_process = None
+
+        if stopped:
+            messagebox.showinfo(
+                "Server Control", "Server process terminated safely."
+            )
+        else:
+            self.log("[WARN] No active dedicated server process found.")
+            messagebox.showinfo(
+                "Server Control",
+                "No active IW4x dedicated server process was found.",
+            )
 
 if __name__ == "__main__":
     root = tk.Tk()
